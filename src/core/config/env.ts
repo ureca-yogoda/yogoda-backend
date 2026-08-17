@@ -15,6 +15,11 @@ const envSchema = z.object({
     REFRESH_TOKEN_EXPIRE_DAYS: z.string().default("7"),
     MONGODB_URI: z.string().default(""),
     MONGODB_DB_NAME: z.string().default(""),
+    KAKAO_CLIENT_ID: z.string().default(""),
+    KAKAO_CLIENT_SECRET: z.string().default(""),
+    KAKAO_REDIRECT_URI: z.string().default(""),
+    // 콤마로 여러 origin 구분 (로컬 + 배포 프론트 주소 등)
+    CORS_ORIGIN: z.string().default("http://localhost:5173"),
 });
 
 type Settings = z.infer<typeof envSchema>;
@@ -27,6 +32,9 @@ const REQUIRED_KEYS = [
     "JWT_ALGORITHM",
     "MONGODB_URI",
     "MONGODB_DB_NAME",
+    "KAKAO_CLIENT_ID",
+    "KAKAO_CLIENT_SECRET",
+    "KAKAO_REDIRECT_URI",
 ] as const satisfies readonly (keyof Settings)[];
 
 export async function loadSecrets() {
