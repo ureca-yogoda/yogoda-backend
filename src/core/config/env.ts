@@ -1,0 +1,66 @@
+import dotenv from "dotenv";
+import { z } from "zod";
+import { DefaultAzureCredential } from "@azure/identity";
+import { SecretClient } from "@azure/keyvault-secrets";
+
+dotenv.config();
+
+const envSchema = z.object({
+    PORT: z.string().default("8000"),
+    NODE_ENV: z.string().default("development"),
+    KEY_VAULT_URL: z.string().default(""),
+    JWT_SECRET_KEY: z.string().default(""),
+    JWT_ALGORITHM: z.string().default(""),
+    ACCESS_TOKEN_EXPIRE_MINUTES: z.string().default("30"),
+    REFRESH_TOKEN_EXPIRE_DAYS: z.string().default("7"),
+    MONGODB_URI: z.string().default(""),
+    MONGODB_DB_NAME: z.string().default(""),
+});
+
+type Settings = z.infer<typeof envSchema>;
+
+// 필수값도 일단 기본값 ""으로 느슨하게 파싱 — Key Vault로 나중에 채워질 수 있어서 assertRequiredEnv()에서 따로 검증
+const settings: Settings = envSchema.parse(process.env);
+
+const REQUIRED_KEYS = [
+    "JWT_SECRET_KEY",
+    "JWT_ALGORITHM",
+    "MONGODB_URI",
+    "MONGODB_DB_NAME",
+] as const satisfies readonly (keyof Settings)[];
+
+export async function loadSecrets() {
+    if (!settings.KEY_VAULT_URL) return;
+
+    console.log("🔐 Key Vault에서 시크릿 로드 중...");
+
+    const credential = new DefaultAzureCredential();
+    const client = new SecretClient(settings.KEY_VAULT_URL, credential);
+
+    for await (const secretProperties of client.listPropertiesOfSecrets()) {
+        // Key Vault 시크릿 이름은 하이픈, 환경변수는 언더스코어 컨벤션이라 변환 필요
+        const settingKey = secretProperties.name
+            .replace(/-/g, "_")
+            .toUpperCase();
+
+        if (settingKey in settings) {
+            const secret = await client.getSecret(secretProperties.name);
+            if (secret.value) {
+                (settings as Record<string, string>)[settingKey] = secret.value;
+            }
+        }
+    }
+
+    console.log("✅ Key Vault 시크릿 로드 완료");
+}
+
+export function assertRequiredEnv() {
+    const missing = REQUIRED_KEYS.filter((key) => !settings[key]);
+    if (missing.length > 0) {
+        throw new Error(
+            `Missing required environment variables: ${missing.join(", ")}`
+        );
+    }
+}
+
+export const env = settings;

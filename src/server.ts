@@ -1,0 +1,22 @@
+import express from "express";
+import swaggerUi from "swagger-ui-express";
+import { env, loadSecrets, assertRequiredEnv } from "./core/config/env.js";
+import { connectDB } from "./core/db/mongoose.js";
+import { swaggerSpec } from "./core/config/swagger.js";
+
+const app = express();
+
+app.get("/", (req, res) => res.redirect("/api-docs"));
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+async function bootstrap() {
+    await loadSecrets();
+    assertRequiredEnv();
+    await connectDB();
+
+    app.listen(env.PORT, () => {
+        console.log(`🚀 서버 실행 중 (포트: ${env.PORT})`);
+    });
+}
+
+bootstrap();
