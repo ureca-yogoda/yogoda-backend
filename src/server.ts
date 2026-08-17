@@ -3,11 +3,18 @@ import swaggerUi from "swagger-ui-express";
 import { env, loadSecrets, assertRequiredEnv } from "./core/config/env.js";
 import { connectDB } from "./core/db/mongoose.js";
 import { swaggerSpec } from "./core/config/swagger.js";
+import { errorHandler } from "./core/middlewares/errorHandler.js";
+import authRoutes from "./api/routes/auth.routes.js";
 
 const app = express();
 
+app.use(express.json());
+
 app.get("/", (req, res) => res.redirect("/api-docs"));
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.use("/api/auth", authRoutes);
+
+app.use(errorHandler);
 
 async function bootstrap() {
     await loadSecrets();
