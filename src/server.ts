@@ -1,4 +1,5 @@
 import express from "express";
+import cors from "cors";
 import swaggerUi from "swagger-ui-express";
 import { env, loadSecrets, assertRequiredEnv } from "./core/config/env.js";
 import { connectDB } from "./core/db/mongoose.js";
@@ -8,6 +9,12 @@ import authRoutes from "./api/routes/auth.routes.js";
 
 const app = express();
 
+app.use(
+    cors({
+        origin: env.CORS_ORIGIN.split(",").map((origin) => origin.trim()),
+        credentials: true,
+    }),
+);
 app.use(express.json());
 
 app.get("/", (req, res) => res.redirect("/api-docs"));
