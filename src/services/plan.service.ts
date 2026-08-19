@@ -10,3 +10,10 @@ export const getPlans = async () => {
     })
     .lean();
 };
+
+export const getPlanByCode = async (code: string) => {
+  return PlanModel.findOne({
+    code,
+    isActive: true,
+  }).lean();
+};
