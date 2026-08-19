@@ -6,6 +6,7 @@ import { loginSchema } from "../../schemas/auth.schema.js";
 import {
   loginWithKakao,
   loginWithNaver,
+  loginWithGoogle,
   refreshAccessToken,
 } from "../../services/auth.service.js";
 
@@ -68,6 +69,35 @@ export const naverLoginHandler = async (
   } catch (err: unknown) {
     if (axios.isAxiosError(err) && err.response?.status === 401) {
       res.status(401).json({ message: "네이버 인증에 실패했어요." });
+      return;
+    }
+
+    next(err);
+  }
+};
+
+export const googleLoginHandler = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const { code } = loginSchema.parse(req.body);
+    const result = await loginWithGoogle(code);
+
+    res.cookie("refreshToken", result.refreshToken, COOKIE_OPTIONS);
+
+    res.status(200).json({
+      accessToken: result.accessToken,
+      userId: result.userId,
+      name: result.nickname,
+      theme: result.theme,
+      isNewUser: result.isNewUser,
+    });
+  } catch (err: unknown) {
+    if (axios.isAxiosError(err) && err.response?.status === 401) {
+      console.error("구글 인증 실패:", err.response?.data);
+      res.status(401).json({ message: "구글 인증에 실패했어요." });
       return;
     }
 

@@ -21,6 +21,9 @@ const envSchema = z.object({
   NAVER_CLIENT_ID: z.string().default(""),
   NAVER_CLIENT_SECRET: z.string().default(""),
   NAVER_REDIRECT_URI: z.string().default(""),
+  GOOGLE_CLIENT_ID: z.string().default(""),
+  GOOGLE_CLIENT_SECRET: z.string().default(""),
+  GOOGLE_REDIRECT_URI: z.string().default(""),
   // 콤마로 여러 origin 구분 (로컬 + 배포 프론트 주소 등)
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
 });
@@ -41,6 +44,9 @@ const REQUIRED_KEYS = [
   "NAVER_CLIENT_ID",
   "NAVER_CLIENT_SECRET",
   "NAVER_REDIRECT_URI",
+  "GOOGLE_CLIENT_ID",
+  "GOOGLE_CLIENT_SECRET",
+  "GOOGLE_REDIRECT_URI",
 ] as const satisfies readonly (keyof Settings)[];
 
 export async function loadSecrets() {

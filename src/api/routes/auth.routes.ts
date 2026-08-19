@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   kakaoLoginHandler,
   naverLoginHandler,
+  googleLoginHandler,
   refreshHandler,
 } from "../controllers/auth.controller.js";
 
@@ -108,6 +109,55 @@ router.post("/kakao", kakaoLoginHandler);
  *                   type: string
  */
 router.post("/naver", naverLoginHandler);
+
+/**
+ * @swagger
+ * /api/auth/google:
+ *   post:
+ *     summary: 구글 로그인
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - code
+ *             properties:
+ *               code:
+ *                 type: string
+ *                 description: 구글 인가 코드
+ *     responses:
+ *       200:
+ *         description: 로그인 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 accessToken:
+ *                   type: string
+ *                 userId:
+ *                   type: string
+ *                 name:
+ *                   type: string
+ *                 theme:
+ *                   type: string
+ *                   enum: [light, dark]
+ *                 isNewUser:
+ *                   type: boolean
+ *       401:
+ *         description: 구글 인증 실패
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ */
+router.post("/google", googleLoginHandler);
 
 /**
  * @swagger

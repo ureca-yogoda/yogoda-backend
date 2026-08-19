@@ -7,6 +7,7 @@ import {
 } from "../core/security/jwt.js";
 import { getKakaoToken, getKakaoUserInfo } from "./kakao.service.js";
 import { getNaverToken, getNaverUserInfo } from "./naver.service.js";
+import { getGoogleToken, getGoogleUserInfo } from "./google.service.js";
 import { AppError } from "../utils/AppError.js";
 
 interface LoginResult {
@@ -54,6 +55,33 @@ export const loginWithNaver = async (code: string): Promise<LoginResult> => {
     "naver",
     naverUser.naverId,
     naverUser.nickname,
+  );
+
+  const accessToken = createAccessToken({ userId: user._id });
+  const refreshToken = createRefreshToken({ userId: user._id });
+
+  user.refresh_token = refreshToken;
+  await user.save();
+
+  return {
+    accessToken,
+    refreshToken,
+    userId: user._id.toString(),
+    nickname: user.nickname,
+    theme: user.theme,
+    role: user.role,
+    isNewUser,
+  };
+};
+
+export const loginWithGoogle = async (code: string): Promise<LoginResult> => {
+  const googleAccessToken = await getGoogleToken(code);
+  const googleUser = await getGoogleUserInfo(googleAccessToken);
+
+  const { user, isNewUser } = await findOrCreateUser(
+    "google",
+    googleUser.googleId,
+    googleUser.name,
   );
 
   const accessToken = createAccessToken({ userId: user._id });
