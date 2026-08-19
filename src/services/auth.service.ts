@@ -6,6 +6,7 @@ import {
   verifyToken,
 } from "../core/security/jwt.js";
 import { getKakaoToken, getKakaoUserInfo } from "./kakao.service.js";
+import { getNaverToken, getNaverUserInfo } from "./naver.service.js";
 import { AppError } from "../utils/AppError.js";
 
 interface LoginResult {
@@ -26,6 +27,33 @@ export const loginWithKakao = async (code: string): Promise<LoginResult> => {
     "kakao",
     kakaoUser.kakaoId,
     kakaoUser.nickname,
+  );
+
+  const accessToken = createAccessToken({ userId: user._id });
+  const refreshToken = createRefreshToken({ userId: user._id });
+
+  user.refresh_token = refreshToken;
+  await user.save();
+
+  return {
+    accessToken,
+    refreshToken,
+    userId: user._id.toString(),
+    nickname: user.nickname,
+    theme: user.theme,
+    role: user.role,
+    isNewUser,
+  };
+};
+
+export const loginWithNaver = async (code: string): Promise<LoginResult> => {
+  const naverAccessToken = await getNaverToken(code);
+  const naverUser = await getNaverUserInfo(naverAccessToken);
+
+  const { user, isNewUser } = await findOrCreateUser(
+    "naver",
+    naverUser.naverId,
+    naverUser.nickname,
   );
 
   const accessToken = createAccessToken({ userId: user._id });

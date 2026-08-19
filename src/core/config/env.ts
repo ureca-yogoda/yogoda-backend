@@ -18,6 +18,9 @@ const envSchema = z.object({
   KAKAO_CLIENT_ID: z.string().default(""),
   KAKAO_CLIENT_SECRET: z.string().default(""),
   KAKAO_REDIRECT_URI: z.string().default(""),
+  NAVER_CLIENT_ID: z.string().default(""),
+  NAVER_CLIENT_SECRET: z.string().default(""),
+  NAVER_REDIRECT_URI: z.string().default(""),
   // 콤마로 여러 origin 구분 (로컬 + 배포 프론트 주소 등)
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
 });
@@ -35,6 +38,9 @@ const REQUIRED_KEYS = [
   "KAKAO_CLIENT_ID",
   "KAKAO_CLIENT_SECRET",
   "KAKAO_REDIRECT_URI",
+  "NAVER_CLIENT_ID",
+  "NAVER_CLIENT_SECRET",
+  "NAVER_REDIRECT_URI",
 ] as const satisfies readonly (keyof Settings)[];
 
 export async function loadSecrets() {
