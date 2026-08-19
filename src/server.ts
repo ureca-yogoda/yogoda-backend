@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import swaggerUi from "swagger-ui-express";
 import { env, loadSecrets, assertRequiredEnv } from "./core/config/env.js";
 import { connectDB } from "./core/db/mongoose.js";
@@ -16,6 +17,7 @@ app.use(
   }),
 );
 app.use(express.json());
+app.use(cookieParser());
 
 app.get("/", (req, res) => res.redirect("/api-docs"));
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));

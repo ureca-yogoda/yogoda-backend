@@ -1,7 +1,12 @@
 import { HydratedDocument } from "mongoose";
 import { UserModel, IUser, Provider } from "../models/user.model.js";
-import { createAccessToken, createRefreshToken } from "../core/security/jwt.js";
+import {
+  createAccessToken,
+  createRefreshToken,
+  verifyToken,
+} from "../core/security/jwt.js";
 import { getKakaoToken, getKakaoUserInfo } from "./kakao.service.js";
+import { AppError } from "../utils/AppError.js";
 
 interface LoginResult {
   accessToken: string;
@@ -38,6 +43,29 @@ export const loginWithKakao = async (code: string): Promise<LoginResult> => {
     role: user.role,
     isNewUser,
   };
+};
+
+export const refreshAccessToken = async (
+  refreshToken: string,
+): Promise<string> => {
+  let payload;
+  try {
+    payload = verifyToken(refreshToken);
+  } catch {
+    throw new AppError(401, "토큰이 만료되었어요. 다시 로그인해 주세요.");
+  }
+
+  if (payload.type !== "refresh" || !payload.userId) {
+    throw new AppError(401, "토큰이 만료되었어요. 다시 로그인해 주세요.");
+  }
+
+  const user = await UserModel.findById(payload.userId);
+
+  if (!user || user.refresh_token !== refreshToken) {
+    throw new AppError(401, "토큰이 만료되었어요. 다시 로그인해 주세요.");
+  }
+
+  return createAccessToken({ userId: user._id });
 };
 
 export const findOrCreateUser = async (

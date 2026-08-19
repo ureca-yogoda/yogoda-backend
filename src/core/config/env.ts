@@ -19,7 +19,7 @@ const envSchema = z.object({
   KAKAO_CLIENT_SECRET: z.string().default(""),
   KAKAO_REDIRECT_URI: z.string().default(""),
   // 콤마로 여러 origin 구분 (로컬 + 배포 프론트 주소 등)
-  CORS_ORIGIN: z.string().default("http://localhost:5173"),
+  CORS_ORIGIN: z.string().default("http://localhost:3000"),
 });
 
 type Settings = z.infer<typeof envSchema>;

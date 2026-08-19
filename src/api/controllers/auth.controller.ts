@@ -3,7 +3,10 @@ import { Request, Response, NextFunction } from "express";
 
 import { env } from "../../core/config/env.js";
 import { loginSchema } from "../../schemas/auth.schema.js";
-import { loginWithKakao } from "../../services/auth.service.js";
+import {
+  loginWithKakao,
+  refreshAccessToken,
+} from "../../services/auth.service.js";
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -38,6 +41,29 @@ export const kakaoLoginHandler = async (
       return;
     }
 
+    next(err);
+  }
+};
+
+export const refreshHandler = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const refreshToken = req.cookies?.refreshToken as string | undefined;
+
+    if (!refreshToken) {
+      res
+        .status(401)
+        .json({ message: "토큰이 만료되었어요. 다시 로그인해 주세요." });
+      return;
+    }
+
+    const accessToken = await refreshAccessToken(refreshToken);
+
+    res.status(200).json({ accessToken });
+  } catch (err: unknown) {
     next(err);
   }
 };
