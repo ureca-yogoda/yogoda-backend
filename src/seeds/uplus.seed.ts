@@ -4,7 +4,12 @@ import { assertRequiredEnv, loadSecrets } from "../core/config/env.js";
 import { connectDB } from "../core/db/mongoose.js";
 import { BenefitModel, IBenefit } from "../models/benefit.model.js";
 import { IMission, MissionModel } from "../models/mission.model.js";
-import { IDataAllowance, IPlan, PlanModel } from "../models/plan.model.js";
+import {
+  IDataAllowance,
+  IPlan,
+  IPlanChoiceBenefitOption,
+  PlanModel,
+} from "../models/plan.model.js";
 
 const checkedAt = new Date("2026-08-19T00:00:00.000+09:00");
 const nergetPlanSourceUrl = "https://www.lguplus.com/nerget/plan";
@@ -265,50 +270,65 @@ const nergetPlanSpecs = [
   sortOrder: number;
 }>;
 
-const premiumPlus59 = [
-  "구글원",
-  "AI구독",
-  "마니아디바이스",
-  "삼성디바이스",
-  "애플디바이스",
-  "넷플릭스",
-  "데일리",
-  "너겟 올인원",
-  "소호 너겟 올인원",
+const choiceOption = (
+  code: string,
+  title: string,
+): IPlanChoiceBenefitOption => ({
+  code,
+  title,
+  description: null,
+  monthlyValue: null,
+});
+
+const premiumPlus59: IPlanChoiceBenefitOption[] = [
+  choiceOption("google-one", "구글원"),
+  choiceOption("ai-subscription", "AI구독"),
+  choiceOption("mania-device", "마니아디바이스"),
+  choiceOption("samsung-device", "삼성디바이스"),
+  choiceOption("apple-device", "애플디바이스"),
+  choiceOption("netflix", "넷플릭스"),
+  choiceOption("daily", "데일리"),
+  choiceOption("nerget-all-in-one", "너겟 올인원"),
+  choiceOption("soho-nerget-all-in-one", "소호 너겟 올인원"),
 ];
 
-const premiumPlus65 = [
-  "구글원",
-  "AI구독",
-  "마니아디바이스",
-  "삼성디바이스",
-  "애플디바이스",
-  "디즈니+티빙",
-  "넷플릭스",
-  "데일리",
-  "액션캠",
-  "이마트24",
-  "토스",
-  "너겟 올인원",
-  "소호 너겟 올인원",
+const premiumPlus65: IPlanChoiceBenefitOption[] = [
+  choiceOption("google-one", "구글원"),
+  choiceOption("ai-subscription", "AI구독"),
+  choiceOption("mania-device", "마니아디바이스"),
+  choiceOption("samsung-device", "삼성디바이스"),
+  choiceOption("apple-device", "애플디바이스"),
+  choiceOption("disney-tving", "디즈니+티빙"),
+  choiceOption("netflix", "넷플릭스"),
+  choiceOption("daily", "데일리"),
+  choiceOption("action-cam", "액션캠"),
+  choiceOption("emart24", "이마트24"),
+  choiceOption("toss", "토스"),
+  choiceOption("nerget-all-in-one", "너겟 올인원"),
+  choiceOption("soho-nerget-all-in-one", "소호 너겟 올인원"),
 ];
 
-const premiumPlus69 = [
-  "구글원",
-  "AI구독",
-  "마니아디바이스",
-  "삼성디바이스",
-  "애플디바이스",
-  "디즈니+티빙",
-  "넷플릭스",
-  "데일리",
-  "액션캠",
-  "이마트24",
-  "너겟 올인원",
-  "소호 너겟 올인원",
+const premiumPlus69: IPlanChoiceBenefitOption[] = [
+  choiceOption("google-one", "구글원"),
+  choiceOption("ai-subscription", "AI구독"),
+  choiceOption("mania-device", "마니아디바이스"),
+  choiceOption("samsung-device", "삼성디바이스"),
+  choiceOption("apple-device", "애플디바이스"),
+  choiceOption("disney-tving", "디즈니+티빙"),
+  choiceOption("netflix", "넷플릭스"),
+  choiceOption("daily", "데일리"),
+  choiceOption("action-cam", "액션캠"),
+  choiceOption("emart24", "이마트24"),
+  choiceOption("nerget-all-in-one", "너겟 올인원"),
+  choiceOption("soho-nerget-all-in-one", "소호 너겟 올인원"),
 ];
 
-const dailyPlus = ["구글원", "밀리의 서재", "지니뮤직", "모아진"];
+const dailyPlus: IPlanChoiceBenefitOption[] = [
+  choiceOption("google-one", "구글원"),
+  choiceOption("millie", "밀리의 서재"),
+  choiceOption("genie-music", "지니뮤직"),
+  choiceOption("moazine", "모아진"),
+];
 
 const planDetailOverrides: Partial<
   Record<
@@ -535,8 +555,11 @@ const planDetailOverrides: Partial<
     ],
     choiceBenefits: [
       {
+        code: "premium-plus",
         title: "프리미엄플러스",
         selectionCount: 1,
+        required: true,
+        sortOrder: 1,
         options: premiumPlus59,
       },
     ],
@@ -585,8 +608,11 @@ const planDetailOverrides: Partial<
     ],
     choiceBenefits: [
       {
+        code: "premium-plus",
         title: "프리미엄플러스",
         selectionCount: 1,
+        required: true,
+        sortOrder: 1,
         options: premiumPlus65,
       },
     ],
@@ -641,13 +667,19 @@ const planDetailOverrides: Partial<
     ],
     choiceBenefits: [
       {
+        code: "premium-plus",
         title: "프리미엄플러스",
         selectionCount: 1,
+        required: true,
+        sortOrder: 1,
         options: premiumPlus69,
       },
       {
+        code: "daily-plus",
         title: "데일리플러스",
         selectionCount: 1,
+        required: true,
+        sortOrder: 2,
         options: dailyPlus,
       },
     ],
@@ -695,8 +727,11 @@ const planDetailOverrides: Partial<
     ],
     choiceBenefits: [
       {
+        code: "daily-plus",
         title: "데일리플러스",
         selectionCount: 1,
+        required: true,
+        sortOrder: 1,
         options: dailyPlus,
       },
     ],
