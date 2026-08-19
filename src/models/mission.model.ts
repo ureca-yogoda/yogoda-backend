@@ -1,12 +1,7 @@
 import { Schema, model } from "mongoose";
 
 export type MissionCategory =
-  | "attendance"
-  | "quiz"
-  | "event"
-  | "subscription"
-  | "profile"
-  | "referral";
+  "attendance" | "quiz" | "event" | "subscription" | "profile" | "referral";
 
 export type MissionStatus = "active" | "scheduled" | "ended";
 

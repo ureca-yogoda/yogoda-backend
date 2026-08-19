@@ -1,7 +1,9 @@
+import axios from "axios";
 import { Request, Response, NextFunction } from "express";
+
+import { env } from "../../core/config/env.js";
 import { loginSchema } from "../../schemas/auth.schema.js";
 import { loginWithKakao } from "../../services/auth.service.js";
-import { env } from "../../core/config/env.js";
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -30,11 +32,12 @@ export const kakaoLoginHandler = async (
       isNewUser: result.isNewUser,
       role: result.role,
     });
-  } catch (err: any) {
-    if (err.response?.status === 401) {
+  } catch (err: unknown) {
+    if (axios.isAxiosError(err) && err.response?.status === 401) {
       res.status(401).json({ message: "카카오 인증에 실패했어요." });
       return;
     }
+
     next(err);
   }
 };
