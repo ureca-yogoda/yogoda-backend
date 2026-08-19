@@ -28,10 +28,20 @@ export interface IPlanBenefitDetail {
   monthlyValue: number | null;
 }
 
+export interface IPlanChoiceBenefitOption {
+  code: string;
+  title: string;
+  description: string | null;
+  monthlyValue: number | null;
+}
+
 export interface IPlanChoiceBenefit {
+  code: string;
   title: string;
   selectionCount: number;
-  options: string[];
+  required: boolean;
+  sortOrder: number;
+  options: IPlanChoiceBenefitOption[];
 }
 
 export interface IPlan {
@@ -149,8 +159,36 @@ const planBenefitDetailSchema = new Schema<IPlanBenefitDetail>(
   },
 );
 
+const planChoiceBenefitOptionSchema = new Schema<IPlanChoiceBenefitOption>(
+  {
+    code: {
+      type: String,
+      required: true,
+    },
+    title: {
+      type: String,
+      required: true,
+    },
+    description: {
+      type: String,
+      default: null,
+    },
+    monthlyValue: {
+      type: Number,
+      default: null,
+    },
+  },
+  {
+    _id: false,
+  },
+);
+
 const planChoiceBenefitSchema = new Schema<IPlanChoiceBenefit>(
   {
+    code: {
+      type: String,
+      required: true,
+    },
     title: {
       type: String,
       required: true,
@@ -159,9 +197,20 @@ const planChoiceBenefitSchema = new Schema<IPlanChoiceBenefit>(
       type: Number,
       required: true,
       default: 1,
+      min: 1,
+    },
+    required: {
+      type: Boolean,
+      required: true,
+      default: true,
+    },
+    sortOrder: {
+      type: Number,
+      required: true,
+      default: 0,
     },
     options: {
-      type: [String],
+      type: [planChoiceBenefitOptionSchema],
       default: [],
     },
   },
