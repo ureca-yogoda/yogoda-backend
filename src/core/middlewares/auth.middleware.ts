@@ -11,7 +11,7 @@ export const authMiddleware = async (
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    throw new AppError(401, "인증이 필요합니다.");
+    throw new AppError(401, "인증이 필요해요.");
   }
 
   const token = authHeader.split(" ")[1];

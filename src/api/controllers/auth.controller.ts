@@ -8,6 +8,7 @@ import {
   loginWithNaver,
   loginWithGoogle,
   refreshAccessToken,
+  logout,
 } from "../../services/auth.service.js";
 
 const COOKIE_OPTIONS = {
@@ -123,6 +124,22 @@ export const refreshHandler = async (
     const accessToken = await refreshAccessToken(refreshToken);
 
     res.status(200).json({ accessToken });
+  } catch (err: unknown) {
+    next(err);
+  }
+};
+
+export const logoutHandler = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    await logout(req.user!.userId);
+
+    res.clearCookie("refreshToken", COOKIE_OPTIONS);
+
+    res.status(200).json({ message: "로그아웃 되었어요." });
   } catch (err: unknown) {
     next(err);
   }

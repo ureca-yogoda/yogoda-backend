@@ -124,6 +124,10 @@ export const refreshAccessToken = async (
   return createAccessToken({ userId: user._id });
 };
 
+export const logout = async (userId: string): Promise<void> => {
+  await UserModel.findByIdAndUpdate(userId, { refresh_token: null });
+};
+
 export const findOrCreateUser = async (
   provider: Provider,
   providerId: string,

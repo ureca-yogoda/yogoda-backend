@@ -4,7 +4,9 @@ import {
   naverLoginHandler,
   googleLoginHandler,
   refreshHandler,
+  logoutHandler,
 } from "../controllers/auth.controller.js";
+import { authMiddleware } from "../../core/middlewares/auth.middleware.js";
 
 const router = Router();
 
@@ -193,5 +195,35 @@ router.post("/google", googleLoginHandler);
  *                   type: string
  */
 router.post("/refresh", refreshHandler);
+
+/**
+ * @swagger
+ * /api/auth/logout:
+ *   post:
+ *     summary: 로그아웃
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 로그아웃 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       401:
+ *         description: 인증 실패
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ */
+router.post("/logout", authMiddleware, logoutHandler);
 
 export default router;
