@@ -7,6 +7,13 @@ export type PlanProductLine = "nerget" | "uplus";
 export type PlanBenefitCategory =
   "content" | "payment" | "membership" | "device" | "bundle" | "other";
 
+export type PlanChoiceBenefitStepType = "choice" | "info";
+
+export type PlanChoiceBenefitSection =
+  "plus" | "premium" | "detail" | "coupon" | "membership" | "addon" | "other";
+
+export type PlanChoiceBenefitDependencyMatch = "any" | "all";
+
 export interface IDataAllowance {
   display: string;
   amountMb: number | null;
@@ -32,15 +39,35 @@ export interface IPlanChoiceBenefitOption {
   code: string;
   title: string;
   description: string | null;
+
+  brand: string | null;
+  imageUrl: string | null;
+
   monthlyValue: number | null;
+}
+
+export interface IPlanChoiceBenefitDependency {
+  stepCode: string;
+  optionCodes: string[];
+  match: PlanChoiceBenefitDependencyMatch;
 }
 
 export interface IPlanChoiceBenefit {
   code: string;
+
+  stepType: PlanChoiceBenefitStepType;
+  section: PlanChoiceBenefitSection;
+
+  sectionTitle: string | null;
   title: string;
+  instruction: string | null;
+
   selectionCount: number;
   required: boolean;
   sortOrder: number;
+
+  dependsOn: IPlanChoiceBenefitDependency[];
+
   options: IPlanChoiceBenefitOption[];
 }
 
@@ -173,6 +200,14 @@ const planChoiceBenefitOptionSchema = new Schema<IPlanChoiceBenefitOption>(
       type: String,
       default: null,
     },
+    brand: {
+      type: String,
+      default: null,
+    },
+    imageUrl: {
+      type: String,
+      default: null,
+    },
     monthlyValue: {
       type: Number,
       default: null,
@@ -183,32 +218,106 @@ const planChoiceBenefitOptionSchema = new Schema<IPlanChoiceBenefitOption>(
   },
 );
 
+const planChoiceBenefitDependencySchema =
+  new Schema<IPlanChoiceBenefitDependency>(
+    {
+      stepCode: {
+        type: String,
+        required: true,
+      },
+      optionCodes: {
+        type: [String],
+        required: true,
+        default: [],
+      },
+      match: {
+        type: String,
+        required: true,
+        enum: ["any", "all"],
+        default: "any",
+      },
+    },
+    {
+      _id: false,
+    },
+  );
+
 const planChoiceBenefitSchema = new Schema<IPlanChoiceBenefit>(
   {
     code: {
       type: String,
       required: true,
     },
+
+    stepType: {
+      type: String,
+      required: true,
+      enum: ["choice", "info"],
+      default: "choice",
+    },
+
+    section: {
+      type: String,
+      required: true,
+      enum: [
+        "plus",
+        "premium",
+        "detail",
+        "coupon",
+        "membership",
+        "addon",
+        "other",
+      ],
+      default: "other",
+    },
+
+    sectionTitle: {
+      type: String,
+      default: null,
+    },
+
     title: {
       type: String,
       required: true,
     },
+
+    instruction: {
+      type: String,
+      default: null,
+    },
+
+    /*
+     * choice 단계는 1개 이상,
+     * info 단계는 선택할 것이 없으므로 0으로 사용할 수 있음
+     */
     selectionCount: {
       type: Number,
       required: true,
       default: 1,
-      min: 1,
+      min: 0,
     },
+
     required: {
       type: Boolean,
       required: true,
       default: true,
     },
+
     sortOrder: {
       type: Number,
       required: true,
       default: 0,
     },
+
+    /*
+     * 특정 이전 선택에 따라 단계 노출 여부 결정
+     * 비어 있으면 항상 노출 가능한 단계
+     */
+    dependsOn: {
+      type: [planChoiceBenefitDependencySchema],
+      default: [],
+    },
+
     options: {
       type: [planChoiceBenefitOptionSchema],
       default: [],
