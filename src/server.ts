@@ -10,10 +10,10 @@ import authRoutes from "./api/routes/auth.routes.js";
 const app = express();
 
 app.use(
-    cors({
-        origin: env.CORS_ORIGIN.split(",").map((origin) => origin.trim()),
-        credentials: true,
-    }),
+  cors({
+    origin: env.CORS_ORIGIN.split(",").map((origin) => origin.trim()),
+    credentials: true,
+  }),
 );
 app.use(express.json());
 
@@ -24,13 +24,13 @@ app.use("/api/auth", authRoutes);
 app.use(errorHandler);
 
 async function bootstrap() {
-    await loadSecrets();
-    assertRequiredEnv();
-    await connectDB();
+  await loadSecrets();
+  assertRequiredEnv();
+  await connectDB();
 
-    app.listen(env.PORT, () => {
-        console.log(`🚀 서버 실행 중 (포트: ${env.PORT})`);
-    });
+  app.listen(env.PORT, () => {
+    console.log(`🚀 서버 실행 중 (포트: ${env.PORT})`);
+  });
 }
 
 bootstrap();
