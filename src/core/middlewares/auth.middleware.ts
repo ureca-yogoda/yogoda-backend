@@ -4,29 +4,29 @@ import { UserModel } from "../../models/user.model.js";
 import { AppError } from "../../utils/AppError.js";
 
 export const authMiddleware = async (
-    req: Request,
-    res: Response,
-    next: NextFunction,
+  req: Request,
+  res: Response,
+  next: NextFunction,
 ) => {
-    const authHeader = req.headers.authorization;
+  const authHeader = req.headers.authorization;
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        throw new AppError(401, "인증이 필요합니다.");
-    }
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    throw new AppError(401, "인증이 필요합니다.");
+  }
 
-    const token = authHeader.split(" ")[1];
-    const payload = verifyToken(token);
-    const userId = payload.userId;
+  const token = authHeader.split(" ")[1];
+  const payload = verifyToken(token);
+  const userId = payload.userId;
 
-    if (!userId) {
-        throw new AppError(401, "유효하지 않은 토큰이에요.");
-    }
+  if (!userId) {
+    throw new AppError(401, "유효하지 않은 토큰이에요.");
+  }
 
-    const user = await UserModel.findById(userId);
-    if (!user) {
-        throw new AppError(404, "유저를 찾을 수 없어요.");
-    }
+  const user = await UserModel.findById(userId);
+  if (!user) {
+    throw new AppError(404, "유저를 찾을 수 없어요.");
+  }
 
-    req.user = { userId: user._id.toString(), nickname: user.nickname };
-    next();
+  req.user = { userId: user._id.toString(), nickname: user.nickname };
+  next();
 };
