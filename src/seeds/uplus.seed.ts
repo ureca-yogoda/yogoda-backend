@@ -6,7 +6,7 @@ import { BenefitModel, IBenefit } from "../models/benefit.model.js";
 import { IMission, MissionModel } from "../models/mission.model.js";
 import { IDataAllowance, IPlan, PlanModel } from "../models/plan.model.js";
 
-const checkedAt = new Date("2026-08-18T00:00:00.000+09:00");
+const checkedAt = new Date("2026-08-19T00:00:00.000+09:00");
 const nergetPlanSourceUrl = "https://www.lguplus.com/nerget/plan";
 const nergetBenefitSourceUrl = "https://www.lguplus.com/nerget/benefit";
 const membershipSourceUrl =
@@ -41,42 +41,50 @@ const legacyUplusPlanCodes = [
 
 const gbToMb = (gb: number) => gb * 1024;
 
-const limitedData = (
-  gb: number,
-  throttleKbps: number | null,
-): IDataAllowance => ({
-  display:
-    throttleKbps === null
-      ? `월 ${gb}GB`
-      : `월 ${gb}GB + 최대 ${formatSpeed(throttleKbps)}`,
-  amountMb: gbToMb(gb),
-  throttleKbps,
-  sharingDisplay: null,
-});
-
-const unlimitedData = (
-  sharingGb: number,
-  familyDataGb: number,
-): IDataAllowance => ({
-  display: "데이터 완전 무제한",
-  amountMb: null,
-  throttleKbps: null,
-  sharingDisplay: `테더링/쉐어링 ${sharingGb}GB, 참 쉬운 가족 데이터 ${familyDataGb}GB`,
-});
-
 function formatSpeed(kbps: number) {
   if (kbps >= 1000) return `${kbps / 1000}Mbps`;
 
   return `${kbps}Kbps`;
 }
 
+const limitedData = (
+  gb: number,
+  throttleKbps: number,
+  sharingDisplay: string,
+): IDataAllowance => ({
+  display: `월 ${gb}GB + 최대 ${formatSpeed(throttleKbps)}`,
+  amountMb: gbToMb(gb),
+  throttleKbps,
+  sharingDisplay,
+  familyDataDisplay: null,
+});
+
+const unlimitedData = (
+  sharingGb: number,
+  familyDataGb: number | null = null,
+): IDataAllowance => ({
+  display: "데이터 완전 무제한",
+  amountMb: null,
+  throttleKbps: null,
+  sharingDisplay: `테더링/쉐어링 ${sharingGb}GB`,
+  familyDataDisplay:
+    familyDataGb === null ? null : `참 쉬운 가족 데이터 ${familyDataGb}GB`,
+});
+
 const nergetPlanSpecs = [
   {
     code: "nerget-26",
     name: "너겟26",
     monthlyFee: 26000,
-    data: limitedData(6, 400),
-    tags: ["너겟", "저가", "소량", "실속"],
+    data: limitedData(6, 400, "테더링/쉐어링 기본 제공량 내 이용"),
+    promotion: {
+      badge: null,
+      effectiveMonthlyFee: 21600,
+      maxMonthlyBenefit: 4400,
+    },
+    isPopular: true,
+    popularOrder: 6,
+    tags: ["너겟", "저가", "소량", "실속", "인기"],
     recommendationTags: ["저사용", "통신비절약", "와이파이중심"],
     sortOrder: 10,
   },
@@ -84,7 +92,14 @@ const nergetPlanSpecs = [
     code: "nerget-33",
     name: "너겟33",
     monthlyFee: 33000,
-    data: limitedData(12, 400),
+    data: limitedData(12, 400, "테더링/쉐어링 기본 제공량 내 이용"),
+    promotion: {
+      badge: null,
+      effectiveMonthlyFee: null,
+      maxMonthlyBenefit: null,
+    },
+    isPopular: false,
+    popularOrder: null,
     tags: ["너겟", "실속", "라이트"],
     recommendationTags: ["저사용", "통신비절약", "SNS"],
     sortOrder: 20,
@@ -93,7 +108,14 @@ const nergetPlanSpecs = [
     code: "nerget-36",
     name: "너겟36",
     monthlyFee: 36000,
-    data: limitedData(20, 400),
+    data: limitedData(20, 1000, "테더링/쉐어링 기본 제공량 내 이용"),
+    promotion: {
+      badge: null,
+      effectiveMonthlyFee: null,
+      maxMonthlyBenefit: null,
+    },
+    isPopular: false,
+    popularOrder: null,
     tags: ["너겟", "실속", "중간사용"],
     recommendationTags: ["중간사용", "SNS", "음악"],
     sortOrder: 30,
@@ -102,8 +124,15 @@ const nergetPlanSpecs = [
     code: "nerget-39",
     name: "너겟39",
     monthlyFee: 39000,
-    data: limitedData(27, 400),
-    tags: ["너겟", "중간사용", "추천"],
+    data: limitedData(27, 1000, "테더링/쉐어링 기본 제공량 내 이용"),
+    promotion: {
+      badge: null,
+      effectiveMonthlyFee: null,
+      maxMonthlyBenefit: null,
+    },
+    isPopular: false,
+    popularOrder: null,
+    tags: ["너겟", "중간사용"],
     recommendationTags: ["중간사용", "동영상가끔", "통신비절약"],
     sortOrder: 40,
   },
@@ -111,8 +140,15 @@ const nergetPlanSpecs = [
     code: "nerget-43",
     name: "너겟43",
     monthlyFee: 43000,
-    data: limitedData(40, 1000),
-    tags: ["너겟", "데이터", "추천"],
+    data: limitedData(40, 1000, "테더링/쉐어링 기본 제공량 내 이용"),
+    promotion: {
+      badge: null,
+      effectiveMonthlyFee: null,
+      maxMonthlyBenefit: null,
+    },
+    isPopular: false,
+    popularOrder: null,
+    tags: ["너겟", "데이터"],
     recommendationTags: ["동영상", "중간사용", "가성비"],
     sortOrder: 50,
   },
@@ -120,8 +156,15 @@ const nergetPlanSpecs = [
     code: "nerget-46",
     name: "너겟46",
     monthlyFee: 46000,
-    data: limitedData(81, 3000),
-    tags: ["너겟", "대용량", "인기"],
+    data: limitedData(81, 3000, "테더링/쉐어링 기본 제공량 내 50GB"),
+    promotion: {
+      badge: null,
+      effectiveMonthlyFee: null,
+      maxMonthlyBenefit: null,
+    },
+    isPopular: false,
+    popularOrder: null,
+    tags: ["너겟", "대용량"],
     recommendationTags: ["동영상", "대용량", "가성비"],
     sortOrder: 60,
   },
@@ -129,8 +172,15 @@ const nergetPlanSpecs = [
     code: "nerget-49",
     name: "너겟49",
     monthlyFee: 49000,
-    data: limitedData(120, 5000),
-    tags: ["너겟", "대용량", "추천"],
+    data: limitedData(120, 5000, "테더링/쉐어링 기본 제공량 내 60GB"),
+    promotion: {
+      badge: "Npay 24만원",
+      effectiveMonthlyFee: 24600,
+      maxMonthlyBenefit: 24400,
+    },
+    isPopular: true,
+    popularOrder: 2,
+    tags: ["너겟", "대용량", "인기"],
     recommendationTags: ["대용량", "영상시청", "핫스팟"],
     sortOrder: 70,
   },
@@ -138,8 +188,15 @@ const nergetPlanSpecs = [
     code: "nerget-59",
     name: "너겟59",
     monthlyFee: 59000,
-    data: unlimitedData(30, 20),
-    tags: ["너겟", "무제한", "프리미엄"],
+    data: unlimitedData(70),
+    promotion: {
+      badge: "Npay 24만원",
+      effectiveMonthlyFee: 3700,
+      maxMonthlyBenefit: 55300,
+    },
+    isPopular: true,
+    popularOrder: 3,
+    tags: ["너겟", "무제한", "프리미엄", "인기"],
     recommendationTags: ["무제한", "영상시청", "콘텐츠"],
     sortOrder: 80,
   },
@@ -147,8 +204,15 @@ const nergetPlanSpecs = [
     code: "nerget-65",
     name: "너겟65",
     monthlyFee: 65000,
-    data: unlimitedData(50, 30),
-    tags: ["너겟", "무제한", "프리미엄"],
+    data: unlimitedData(80),
+    promotion: {
+      badge: "너겟쿠폰 34.8만원",
+      effectiveMonthlyFee: -1200,
+      maxMonthlyBenefit: 66200,
+    },
+    isPopular: true,
+    popularOrder: 4,
+    tags: ["너겟", "무제한", "프리미엄", "인기"],
     recommendationTags: ["무제한", "핫스팟", "콘텐츠"],
     sortOrder: 90,
   },
@@ -156,8 +220,15 @@ const nergetPlanSpecs = [
     code: "nerget-69",
     name: "너겟69",
     monthlyFee: 69000,
-    data: unlimitedData(70, 40),
-    tags: ["너겟", "무제한", "인기"],
+    data: unlimitedData(100),
+    promotion: {
+      badge: "너겟쿠폰 34.8만원",
+      effectiveMonthlyFee: -22300,
+      maxMonthlyBenefit: 91300,
+    },
+    isPopular: true,
+    popularOrder: 5,
+    tags: ["너겟", "무제한", "프리미엄", "인기"],
     recommendationTags: ["무제한", "핫스팟", "가족데이터", "콘텐츠"],
     sortOrder: 100,
   },
@@ -166,7 +237,14 @@ const nergetPlanSpecs = [
     name: "너겟75",
     monthlyFee: 75000,
     data: unlimitedData(100, 50),
-    tags: ["너겟", "무제한", "최상위"],
+    promotion: {
+      badge: "Npay 18만원",
+      effectiveMonthlyFee: 1400,
+      maxMonthlyBenefit: 73600,
+    },
+    isPopular: true,
+    popularOrder: 1,
+    tags: ["너겟", "무제한", "최상위", "인기"],
     recommendationTags: ["무제한", "핫스팟", "가족데이터", "OTT"],
     sortOrder: 110,
   },
@@ -175,36 +253,496 @@ const nergetPlanSpecs = [
   name: string;
   monthlyFee: number;
   data: IDataAllowance;
+  promotion: {
+    badge: string | null;
+    effectiveMonthlyFee: number | null;
+    maxMonthlyBenefit: number | null;
+  };
+  isPopular: boolean;
+  popularOrder: number | null;
   tags: string[];
   recommendationTags: string[];
   sortOrder: number;
 }>;
 
-const plans: IPlan[] = nergetPlanSpecs.map((plan) => ({
-  code: plan.code,
-  carrier: "LG_U_PLUS",
-  productLine: "nerget",
-  name: plan.name,
-  category: plan.monthlyFee >= 59000 ? "premium" : "mobile",
-  network: "5G/LTE",
-  audiences: ["general", "app-first"],
-  monthlyFee: plan.monthlyFee,
-  discountFee: null,
-  data: plan.data,
-  voice: "집/이동전화 무제한",
-  sms: "기본제공",
-  membershipTier: null,
-  perks:
-    plan.monthlyFee >= 59000
-      ? ["너겟 앱 전용 혜택", "데이터 완전 무제한", "콘텐츠/구독 혜택 추천"]
-      : ["너겟 앱 전용 혜택", "데이터 사용량별 요금 선택"],
-  tags: plan.tags,
-  recommendationTags: plan.recommendationTags,
-  sourceUrl: nergetPlanSourceUrl,
-  sourceCheckedAt: checkedAt,
-  isActive: true,
-  sortOrder: plan.sortOrder,
-}));
+const premiumPlus59 = [
+  "구글원",
+  "AI구독",
+  "마니아디바이스",
+  "삼성디바이스",
+  "애플디바이스",
+  "넷플릭스",
+  "데일리",
+  "너겟 올인원",
+  "소호 너겟 올인원",
+];
+
+const premiumPlus65 = [
+  "구글원",
+  "AI구독",
+  "마니아디바이스",
+  "삼성디바이스",
+  "애플디바이스",
+  "디즈니+티빙",
+  "넷플릭스",
+  "데일리",
+  "액션캠",
+  "이마트24",
+  "토스",
+  "너겟 올인원",
+  "소호 너겟 올인원",
+];
+
+const premiumPlus69 = [
+  "구글원",
+  "AI구독",
+  "마니아디바이스",
+  "삼성디바이스",
+  "애플디바이스",
+  "디즈니+티빙",
+  "넷플릭스",
+  "데일리",
+  "액션캠",
+  "이마트24",
+  "너겟 올인원",
+  "소호 너겟 올인원",
+];
+
+const dailyPlus = ["구글원", "밀리의 서재", "지니뮤직", "모아진"];
+
+const planDetailOverrides: Partial<
+  Record<
+    string,
+    Pick<
+      IPlan,
+      | "membershipTier"
+      | "smartDeviceBenefit"
+      | "benefitDetails"
+      | "choiceBenefits"
+    >
+  >
+> = {
+  "nerget-26": {
+    membershipTier: null,
+    smartDeviceBenefit: null,
+    benefitDetails: [
+      {
+        category: "bundle",
+        title: "참 쉬운 가족 결합 할인",
+        description: "가족과 결합하면 모바일 요금을 할인받을 수 있어요.",
+        monthlyValue: 4400,
+      },
+      {
+        category: "other",
+        title: "피싱/해킹 안심 서비스",
+        description: "피싱 또는 해킹 금융 피해를 보장하는 안심 혜택이에요.",
+        monthlyValue: null,
+      },
+    ],
+    choiceBenefits: [],
+  },
+  "nerget-33": {
+    membershipTier: null,
+    smartDeviceBenefit: null,
+    benefitDetails: [
+      {
+        category: "bundle",
+        title: "참 쉬운 가족 결합 할인",
+        description: "가족과 결합하면 모바일 요금을 할인받을 수 있어요.",
+        monthlyValue: 4400,
+      },
+      {
+        category: "other",
+        title: "유쓰 너겟데이터",
+        description: "만 19~34세 고객은 월 8GB를 추가로 받을 수 있어요.",
+        monthlyValue: null,
+      },
+      {
+        category: "other",
+        title: "피싱/해킹 안심 서비스",
+        description: "피싱 또는 해킹 금융 피해를 보장하는 안심 혜택이에요.",
+        monthlyValue: null,
+      },
+    ],
+    choiceBenefits: [],
+  },
+  "nerget-36": {
+    membershipTier: null,
+    smartDeviceBenefit: null,
+    benefitDetails: [
+      {
+        category: "bundle",
+        title: "참 쉬운 가족 결합 할인",
+        description: "가족과 결합하면 모바일 요금을 할인받을 수 있어요.",
+        monthlyValue: 4400,
+      },
+      {
+        category: "other",
+        title: "유쓰 너겟데이터",
+        description: "만 19~34세 고객은 월 12GB를 추가로 받을 수 있어요.",
+        monthlyValue: null,
+      },
+      {
+        category: "other",
+        title: "피싱/해킹 안심 서비스",
+        description: "피싱 또는 해킹 금융 피해를 보장하는 안심 혜택이에요.",
+        monthlyValue: null,
+      },
+    ],
+    choiceBenefits: [],
+  },
+  "nerget-39": {
+    membershipTier: null,
+    smartDeviceBenefit: null,
+    benefitDetails: [
+      {
+        category: "bundle",
+        title: "참 쉬운 가족 결합 할인",
+        description: "가족과 결합하면 모바일 요금을 할인받을 수 있어요.",
+        monthlyValue: 4400,
+      },
+      {
+        category: "other",
+        title: "유쓰 너겟데이터",
+        description: "만 19~34세 고객은 월 12GB를 추가로 받을 수 있어요.",
+        monthlyValue: null,
+      },
+      {
+        category: "other",
+        title: "피싱/해킹 안심 서비스",
+        description: "피싱 또는 해킹 금융 피해를 보장하는 안심 혜택이에요.",
+        monthlyValue: null,
+      },
+    ],
+    choiceBenefits: [],
+  },
+  "nerget-43": {
+    membershipTier: null,
+    smartDeviceBenefit: null,
+    benefitDetails: [
+      {
+        category: "bundle",
+        title: "참 쉬운 가족 결합 할인",
+        description: "가족과 결합하면 모바일 요금을 할인받을 수 있어요.",
+        monthlyValue: 4400,
+      },
+      {
+        category: "other",
+        title: "유쓰 너겟데이터",
+        description: "만 19~34세 고객은 월 15GB를 추가로 받을 수 있어요.",
+        monthlyValue: null,
+      },
+      {
+        category: "other",
+        title: "피싱/해킹 안심 서비스",
+        description: "피싱 또는 해킹 금융 피해를 보장하는 안심 혜택이에요.",
+        monthlyValue: null,
+      },
+    ],
+    choiceBenefits: [],
+  },
+  "nerget-46": {
+    membershipTier: null,
+    smartDeviceBenefit: null,
+    benefitDetails: [
+      {
+        category: "bundle",
+        title: "참 쉬운 가족 결합 할인",
+        description: "가족과 결합하면 모바일 요금을 할인받을 수 있어요.",
+        monthlyValue: 4400,
+      },
+      {
+        category: "other",
+        title: "유쓰 너겟데이터",
+        description: "만 19~34세 고객은 월 30GB를 추가로 받을 수 있어요.",
+        monthlyValue: null,
+      },
+      {
+        category: "other",
+        title: "피싱/해킹 안심 서비스",
+        description: "피싱 또는 해킹 금융 피해를 보장하는 안심 혜택이에요.",
+        monthlyValue: null,
+      },
+    ],
+    choiceBenefits: [],
+  },
+  "nerget-49": {
+    membershipTier: null,
+    smartDeviceBenefit: null,
+    benefitDetails: [
+      {
+        category: "payment",
+        title: "네이버페이 등 쿠폰",
+        description: "프로모션 조건에 따라 매달 쿠폰 혜택을 받을 수 있어요.",
+        monthlyValue: 20000,
+      },
+      {
+        category: "bundle",
+        title: "참 쉬운 가족 결합 할인",
+        description: "가족과 결합하면 모바일 요금을 할인받을 수 있어요.",
+        monthlyValue: 4400,
+      },
+      {
+        category: "other",
+        title: "유쓰 너겟데이터",
+        description: "만 19~34세 고객은 월 45GB를 추가로 받을 수 있어요.",
+        monthlyValue: null,
+      },
+      {
+        category: "other",
+        title: "피싱/해킹 안심 서비스",
+        description: "피싱 또는 해킹 금융 피해를 보장하는 안심 혜택이에요.",
+        monthlyValue: null,
+      },
+    ],
+    choiceBenefits: [],
+  },
+  "nerget-59": {
+    membershipTier: "VIP",
+    smartDeviceBenefit: null,
+    benefitDetails: [
+      {
+        category: "content",
+        title: "OTT·구독 등 프리미엄플러스",
+        description: "원하는 프리미엄플러스 혜택 1개를 선택할 수 있어요.",
+        monthlyValue: 23900,
+      },
+      {
+        category: "payment",
+        title: "네이버페이 쿠폰",
+        description: "프로모션 조건에 따라 네이버페이 쿠폰을 받을 수 있어요.",
+        monthlyValue: 20000,
+      },
+      {
+        category: "membership",
+        title: "U+ 멤버십 VIP콕",
+        description:
+          "네이버플러스 멤버십, 영화 예매 등 VIP 혜택을 이용할 수 있어요.",
+        monthlyValue: 7000,
+      },
+      {
+        category: "bundle",
+        title: "참 쉬운 가족 결합 할인",
+        description: "가족과 결합하면 모바일 요금을 할인받을 수 있어요.",
+        monthlyValue: 4400,
+      },
+      {
+        category: "other",
+        title: "피싱/해킹 안심 서비스",
+        description: "피싱 또는 해킹 금융 피해를 보장하는 안심 혜택이에요.",
+        monthlyValue: null,
+      },
+    ],
+    choiceBenefits: [
+      {
+        title: "프리미엄플러스",
+        selectionCount: 1,
+        options: premiumPlus59,
+      },
+    ],
+  },
+  "nerget-65": {
+    membershipTier: "VIP (24개월)",
+    smartDeviceBenefit: "스마트기기 1대 월정액 할인 최대 11,000원",
+    benefitDetails: [
+      {
+        category: "content",
+        title: "OTT·구독 등 프리미엄플러스",
+        description: "원하는 프리미엄플러스 혜택 1개를 선택할 수 있어요.",
+        monthlyValue: 31800,
+      },
+      {
+        category: "payment",
+        title: "네이버페이 등 쿠폰",
+        description: "프로모션 조건에 따라 매달 쿠폰 혜택을 받을 수 있어요.",
+        monthlyValue: 12000,
+      },
+      {
+        category: "membership",
+        title: "U+ 멤버십 VIP콕",
+        description:
+          "네이버플러스 멤버십, 영화 예매 등 VIP 혜택을 이용할 수 있어요.",
+        monthlyValue: 7000,
+      },
+      {
+        category: "device",
+        title: "스마트기기 월정액 할인",
+        description: "스마트기기 1대의 월정액을 할인받을 수 있어요.",
+        monthlyValue: 11000,
+      },
+      {
+        category: "bundle",
+        title: "참 쉬운 가족 결합 할인",
+        description: "가족과 결합하면 모바일 요금을 할인받을 수 있어요.",
+        monthlyValue: 4400,
+      },
+      {
+        category: "other",
+        title: "피싱/해킹 안심 서비스",
+        description: "피싱 또는 해킹 금융 피해를 보장하는 안심 혜택이에요.",
+        monthlyValue: null,
+      },
+    ],
+    choiceBenefits: [
+      {
+        title: "프리미엄플러스",
+        selectionCount: 1,
+        options: premiumPlus65,
+      },
+    ],
+  },
+  "nerget-69": {
+    membershipTier: "VIP (24개월)",
+    smartDeviceBenefit: "스마트기기 2대 월정액 할인 최대 22,000원",
+    benefitDetails: [
+      {
+        category: "content",
+        title: "OTT·구독 등 프리미엄플러스",
+        description: "원하는 프리미엄플러스 혜택 1개를 선택할 수 있어요.",
+        monthlyValue: 31800,
+      },
+      {
+        category: "content",
+        title: "콘텐츠·음악 감상 등 데일리플러스",
+        description: "음악, 도서 등 데일리플러스 혜택 1개를 선택할 수 있어요.",
+        monthlyValue: 15000,
+      },
+      {
+        category: "payment",
+        title: "네이버페이 등 쿠폰",
+        description: "프로모션 조건에 따라 매달 쿠폰 혜택을 받을 수 있어요.",
+        monthlyValue: 12000,
+      },
+      {
+        category: "membership",
+        title: "U+ 멤버십 VIP콕",
+        description: "넷플릭스 이용 등 VIP 등급 혜택을 이용할 수 있어요.",
+        monthlyValue: 7000,
+      },
+      {
+        category: "device",
+        title: "스마트기기 월정액 할인",
+        description:
+          "스마트기기 2대의 월정액을 1대당 최대 11,000원 할인받을 수 있어요.",
+        monthlyValue: 22000,
+      },
+      {
+        category: "bundle",
+        title: "참 쉬운 가족 결합 할인",
+        description: "가족과 결합하면 모바일 요금을 할인받을 수 있어요.",
+        monthlyValue: 6600,
+      },
+      {
+        category: "other",
+        title: "피싱/해킹 안심 서비스",
+        description: "피싱 또는 해킹 금융 피해를 보장하는 안심 혜택이에요.",
+        monthlyValue: null,
+      },
+    ],
+    choiceBenefits: [
+      {
+        title: "프리미엄플러스",
+        selectionCount: 1,
+        options: premiumPlus69,
+      },
+      {
+        title: "데일리플러스",
+        selectionCount: 1,
+        options: dailyPlus,
+      },
+    ],
+  },
+  "nerget-75": {
+    membershipTier: "VIP",
+    smartDeviceBenefit: "스마트기기 2대 월정액 할인 최대 33,000원",
+    benefitDetails: [
+      {
+        category: "content",
+        title: "콘텐츠·음악 감상 등 데일리플러스",
+        description: "음악, 도서 등 데일리플러스 혜택 1개를 선택할 수 있어요.",
+        monthlyValue: 15000,
+      },
+      {
+        category: "payment",
+        title: "네이버페이 등 쿠폰",
+        description: "프로모션 조건에 따라 매달 쿠폰 혜택을 받을 수 있어요.",
+        monthlyValue: 12000,
+      },
+      {
+        category: "membership",
+        title: "U+ 멤버십 VIP콕",
+        description: "무료 영화 예매 등 VIP 등급 혜택을 이용할 수 있어요.",
+        monthlyValue: 7000,
+      },
+      {
+        category: "device",
+        title: "스마트기기 월정액 할인",
+        description: "스마트기기 2대의 월정액을 할인받을 수 있어요.",
+        monthlyValue: 33000,
+      },
+      {
+        category: "bundle",
+        title: "참 쉬운 가족 결합 할인",
+        description: "가족과 결합하면 모바일 요금을 할인받을 수 있어요.",
+        monthlyValue: 6600,
+      },
+      {
+        category: "other",
+        title: "피싱/해킹 안심 서비스",
+        description: "피싱 또는 해킹 금융 피해를 보장하는 안심 혜택이에요.",
+        monthlyValue: null,
+      },
+    ],
+    choiceBenefits: [
+      {
+        title: "데일리플러스",
+        selectionCount: 1,
+        options: dailyPlus,
+      },
+    ],
+  },
+};
+
+const plans: IPlan[] = nergetPlanSpecs.map((plan) => {
+  const details = planDetailOverrides[plan.code];
+  const benefitDetails = details?.benefitDetails ?? [];
+  const choiceBenefits = details?.choiceBenefits ?? [];
+
+  return {
+    code: plan.code,
+    carrier: "LG_U_PLUS",
+    productLine: "nerget",
+    name: plan.name,
+    category: plan.monthlyFee >= 59000 ? "premium" : "mobile",
+    network: "5G",
+    audiences: ["general", "app-first"],
+    monthlyFee: plan.monthlyFee,
+    discountFee: null,
+    data: plan.data,
+    voice: "집/이동전화 무제한",
+    additionalVoice: "부가통화 300분",
+    sms: "기본제공",
+    membershipTier: details?.membershipTier ?? null,
+    smartDeviceBenefit: details?.smartDeviceBenefit ?? null,
+    promotion: plan.promotion,
+    benefitDetails,
+    choiceBenefits,
+    isPopular: plan.isPopular,
+    popularOrder: plan.popularOrder,
+    perks: [
+      ...benefitDetails.map((benefit) => benefit.title),
+      ...choiceBenefits.map(
+        (benefit) => `${benefit.title} ${benefit.selectionCount}개 선택`,
+      ),
+    ],
+    tags: plan.tags,
+    recommendationTags: plan.recommendationTags,
+    sourceUrl: nergetPlanSourceUrl,
+    sourceCheckedAt: checkedAt,
+    isActive: true,
+    sortOrder: plan.sortOrder,
+  };
+});
 
 const commonBenefitFields = {
   period: { startsAt: null, endsAt: null },
