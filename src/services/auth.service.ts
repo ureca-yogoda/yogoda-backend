@@ -1,7 +1,14 @@
 import { HydratedDocument } from "mongoose";
 import { UserModel, IUser, Provider } from "../models/user.model.js";
-import { createAccessToken, createRefreshToken } from "../core/security/jwt.js";
+import {
+  createAccessToken,
+  createRefreshToken,
+  verifyToken,
+} from "../core/security/jwt.js";
 import { getKakaoToken, getKakaoUserInfo } from "./kakao.service.js";
+import { getNaverToken, getNaverUserInfo } from "./naver.service.js";
+import { getGoogleToken, getGoogleUserInfo } from "./google.service.js";
+import { AppError } from "../utils/AppError.js";
 
 interface LoginResult {
   accessToken: string;
@@ -38,6 +45,87 @@ export const loginWithKakao = async (code: string): Promise<LoginResult> => {
     role: user.role,
     isNewUser,
   };
+};
+
+export const loginWithNaver = async (code: string): Promise<LoginResult> => {
+  const naverAccessToken = await getNaverToken(code);
+  const naverUser = await getNaverUserInfo(naverAccessToken);
+
+  const { user, isNewUser } = await findOrCreateUser(
+    "naver",
+    naverUser.naverId,
+    naverUser.nickname,
+  );
+
+  const accessToken = createAccessToken({ userId: user._id });
+  const refreshToken = createRefreshToken({ userId: user._id });
+
+  user.refresh_token = refreshToken;
+  await user.save();
+
+  return {
+    accessToken,
+    refreshToken,
+    userId: user._id.toString(),
+    nickname: user.nickname,
+    theme: user.theme,
+    role: user.role,
+    isNewUser,
+  };
+};
+
+export const loginWithGoogle = async (code: string): Promise<LoginResult> => {
+  const googleAccessToken = await getGoogleToken(code);
+  const googleUser = await getGoogleUserInfo(googleAccessToken);
+
+  const { user, isNewUser } = await findOrCreateUser(
+    "google",
+    googleUser.googleId,
+    googleUser.name,
+  );
+
+  const accessToken = createAccessToken({ userId: user._id });
+  const refreshToken = createRefreshToken({ userId: user._id });
+
+  user.refresh_token = refreshToken;
+  await user.save();
+
+  return {
+    accessToken,
+    refreshToken,
+    userId: user._id.toString(),
+    nickname: user.nickname,
+    theme: user.theme,
+    role: user.role,
+    isNewUser,
+  };
+};
+
+export const refreshAccessToken = async (
+  refreshToken: string,
+): Promise<string> => {
+  let payload;
+  try {
+    payload = verifyToken(refreshToken);
+  } catch {
+    throw new AppError(401, "토큰이 만료되었어요. 다시 로그인해 주세요.");
+  }
+
+  if (payload.type !== "refresh" || !payload.userId) {
+    throw new AppError(401, "토큰이 만료되었어요. 다시 로그인해 주세요.");
+  }
+
+  const user = await UserModel.findById(payload.userId);
+
+  if (!user || user.refresh_token !== refreshToken) {
+    throw new AppError(401, "토큰이 만료되었어요. 다시 로그인해 주세요.");
+  }
+
+  return createAccessToken({ userId: user._id });
+};
+
+export const logout = async (userId: string): Promise<void> => {
+  await UserModel.findByIdAndUpdate(userId, { refresh_token: null });
 };
 
 export const findOrCreateUser = async (
