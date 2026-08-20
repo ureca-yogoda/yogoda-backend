@@ -52,33 +52,53 @@ export async function* streamAIChatText(
   // 네트워크 청크 경계가 SSE 이벤트 경계(빈 줄)와 다를 수 있으므로, 청크마다 바로 파싱하지 않고
   // 버퍼에 누적하다가 완전한 이벤트가 확보됐을 때만 꺼내서 파싱한다. (텍스트가 중간에 잘려 유실되는 것 방지)
   let buffer = "";
+  let yieldedAny = false;
 
   for await (const chunk of response.data as AsyncIterable<Buffer>) {
-    buffer += chunk.toString();
+    // 서버가 CRLF(\r\n)로 줄바꿈을 보내는 경우 구분자(\n\n)를 못 찾는 문제 방지
+    buffer += chunk.toString().replace(/\r\n/g, "\n");
 
     let separatorIdx: number;
     while ((separatorIdx = buffer.indexOf("\n\n")) !== -1) {
       const rawEvent = buffer.slice(0, separatorIdx).trim();
       buffer = buffer.slice(separatorIdx + 2);
 
-      if (!rawEvent.startsWith("data:")) continue;
-
-      const jsonStr = rawEvent.slice(5).trim();
-      if (!jsonStr) continue;
-
-      try {
-        const parsed = JSON.parse(jsonStr);
-        const parts = parsed?.candidates?.[0]?.content?.parts;
-        if (Array.isArray(parts)) {
-          for (const part of parts) {
-            if (typeof part?.text === "string") {
-              yield part.text;
-            }
-          }
-        }
-      } catch {
-        // 불완전하거나 형식이 다른 이벤트는 건너뜀
+      for (const text of extractTextFromSSEEvent(rawEvent)) {
+        yieldedAny = true;
+        yield text;
       }
     }
+  }
+
+  // 마지막 이벤트 뒤에 빈 줄이 안 붙어서 버퍼에 남아있는 경우 대비
+  for (const text of extractTextFromSSEEvent(buffer.trim())) {
+    yieldedAny = true;
+    yield text;
+  }
+
+  if (!yieldedAny) {
+    console.error(
+      "AI 응답에서 텍스트를 하나도 추출하지 못했습니다. 원본 응답 형식을 확인하세요.",
+    );
+  }
+}
+
+function extractTextFromSSEEvent(rawEvent: string): string[] {
+  if (!rawEvent.startsWith("data:")) return [];
+
+  const jsonStr = rawEvent.slice(5).trim();
+  if (!jsonStr) return [];
+
+  try {
+    const parsed = JSON.parse(jsonStr);
+    const parts = parsed?.candidates?.[0]?.content?.parts;
+    if (!Array.isArray(parts)) return [];
+
+    return parts
+      .map((part) => part?.text)
+      .filter((text): text is string => typeof text === "string");
+  } catch {
+    // 불완전하거나 형식이 다른 이벤트는 건너뜀
+    return [];
   }
 }
