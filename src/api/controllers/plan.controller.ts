@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 
 import {
+  cancelCurrentPlan,
   changePlan,
   getCurrentPlan,
   getPlanByCode,
@@ -116,6 +117,33 @@ export const getCurrentPlanHandler = async (
     const currentPlan = await getCurrentPlan(userId);
 
     res.status(200).json(currentPlan);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const cancelCurrentPlanHandler = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      res.status(401).json({
+        message: "로그인이 필요해요.",
+      });
+
+      return;
+    }
+
+    const result = await cancelCurrentPlan(userId);
+
+    res.status(200).json({
+      message: "요금제 해지가 완료되었어요.",
+      ...result,
+    });
   } catch (error) {
     next(error);
   }
