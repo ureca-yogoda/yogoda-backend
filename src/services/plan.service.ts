@@ -23,6 +23,42 @@ export const getPlanByCode = async (code: string) => {
   }).lean();
 };
 
+/*
+ * 로그인한 사용자의 현재 가입 요금제와 선택 혜택을 조회함
+ * 가입한 요금제가 없는 사용자는 null을 반환함
+ */
+export const getCurrentPlan = async (userId: string) => {
+  const user = await UserModel.findById(userId)
+    .select("current_plan_id current_plan_options plan_joined_at")
+    .lean();
+
+  if (!user) {
+    throw new AppError(404, "유저를 찾을 수 없어요.");
+  }
+
+  if (!user.current_plan_id) {
+    return null;
+  }
+
+  const plan = await PlanModel.findById(user.current_plan_id).lean();
+
+  if (!plan) {
+    return null;
+  }
+
+  return {
+    planCode: plan.code,
+    planName: plan.name,
+    currentPlanId: plan._id.toString(),
+    selectedOptions: user.current_plan_options ?? {},
+    joinedAt: user.plan_joined_at,
+  };
+};
+
+/*
+ * 특정 선택 단계의 의존 조건이 충족됐는지 확인함
+ * all은 모든 옵션, any는 하나 이상의 옵션 선택이 필요함
+ */
 function isDependencySatisfied(
   dependency: IPlanChoiceBenefit["dependsOn"][number],
   selectedOptions: SelectedPlanOptions,
@@ -40,6 +76,9 @@ function isDependencySatisfied(
   );
 }
 
+/*
+ * 선행 혜택 선택에 따라 현재 단계를 실제로 선택할 수 있는지 확인함
+ */
 function isStepEligible(
   step: IPlanChoiceBenefit,
   selectedOptions: SelectedPlanOptions,
@@ -53,6 +92,10 @@ function isStepEligible(
   );
 }
 
+/*
+ * 프론트에서 전달된 선택 혜택을 서버 데이터 기준으로 다시 검증함
+ * 클라이언트 검증만 신뢰하지 않고 단계, 옵션, 선택 개수, 의존성을 모두 확인함
+ */
 function validateSelectedOptions(
   steps: IPlanChoiceBenefit[],
   selectedOptions: SelectedPlanOptions,
@@ -117,6 +160,10 @@ function validateSelectedOptions(
   }
 }
 
+/*
+ * 아직 요금제가 없는 사용자의 최초 가입을 처리함
+ * 이미 요금제를 이용 중이라면 변경 API를 사용해야 함
+ */
 export const joinPlan = async (
   userId: string,
   code: string,
@@ -129,6 +176,25 @@ export const joinPlan = async (
 
   if (!plan) {
     throw new AppError(404, "요금제를 찾을 수 없어요.");
+  }
+
+  const currentUser = await UserModel.findById(userId)
+    .select("current_plan_id")
+    .lean();
+
+  if (!currentUser) {
+    throw new AppError(404, "유저를 찾을 수 없어요.");
+  }
+
+  if (currentUser.current_plan_id) {
+    if (currentUser.current_plan_id.equals(plan._id)) {
+      throw new AppError(409, "이미 이용 중인 요금제예요.");
+    }
+
+    throw new AppError(
+      409,
+      "이미 이용 중인 요금제가 있어요. 요금제 변경을 이용해 주세요.",
+    );
   }
 
   validateSelectedOptions(plan.choiceBenefits, selectedOptions);
@@ -159,5 +225,73 @@ export const joinPlan = async (
     currentPlanId: plan._id.toString(),
     selectedOptions,
     joinedAt,
+  };
+};
+
+/*
+ * 기존 요금제를 이용 중인 사용자의 요금제를 다른 요금제로 변경함
+ * 현재 이용 중인 동일 요금제로는 변경할 수 없음
+ */
+export const changePlan = async (
+  userId: string,
+  code: string,
+  selectedOptions: SelectedPlanOptions,
+) => {
+  const plan = await PlanModel.findOne({
+    code,
+    isActive: true,
+  }).lean();
+
+  if (!plan) {
+    throw new AppError(404, "요금제를 찾을 수 없어요.");
+  }
+
+  const currentUser = await UserModel.findById(userId)
+    .select("current_plan_id")
+    .lean();
+
+  if (!currentUser) {
+    throw new AppError(404, "유저를 찾을 수 없어요.");
+  }
+
+  if (!currentUser.current_plan_id) {
+    throw new AppError(
+      409,
+      "현재 이용 중인 요금제가 없어요. 요금제 가입을 이용해 주세요.",
+    );
+  }
+
+  if (currentUser.current_plan_id.equals(plan._id)) {
+    throw new AppError(409, "이미 이용 중인 요금제예요.");
+  }
+
+  validateSelectedOptions(plan.choiceBenefits, selectedOptions);
+
+  const changedAt = new Date();
+
+  const user = await UserModel.findByIdAndUpdate(
+    userId,
+    {
+      $set: {
+        current_plan_id: plan._id,
+        current_plan_options: selectedOptions,
+        plan_joined_at: changedAt,
+      },
+    },
+    {
+      new: true,
+    },
+  );
+
+  if (!user) {
+    throw new AppError(404, "유저를 찾을 수 없어요.");
+  }
+
+  return {
+    planCode: plan.code,
+    planName: plan.name,
+    currentPlanId: plan._id.toString(),
+    selectedOptions,
+    joinedAt: changedAt,
   };
 };

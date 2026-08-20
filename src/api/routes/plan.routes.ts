@@ -1,6 +1,8 @@
 import { Router } from "express";
 
 import {
+  changePlanHandler,
+  getCurrentPlanHandler,
   getPlanByCodeHandler,
   getPlansHandler,
   joinPlanHandler,
@@ -11,7 +13,18 @@ const router = Router();
 
 router.get("/", getPlansHandler);
 
+/*
+ * 현재 로그인한 사용자의 가입 요금제를 조회함
+ * 동적 라우트보다 먼저 선언해서 "me"가 요금제 코드로 처리되지 않도록 함
+ */
+router.get("/me/current", authMiddleware, getCurrentPlanHandler);
+
 router.post("/:code/join", authMiddleware, joinPlanHandler);
+
+/*
+ * 현재 이용 중인 요금제를 다른 요금제로 변경함
+ */
+router.patch("/:code/change", authMiddleware, changePlanHandler);
 
 router.get("/:code", getPlanByCodeHandler);
 
