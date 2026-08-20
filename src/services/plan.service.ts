@@ -295,3 +295,43 @@ export const changePlan = async (
     joinedAt: changedAt,
   };
 };
+
+/*
+ * 현재 이용 중인 요금제를 해지함
+ * 해지 후 홈/혜택에서 가입 요금제가 없는 상태로 조회되도록 관련 필드를 초기화함
+ */
+export const cancelCurrentPlan = async (userId: string) => {
+  const currentUser = await UserModel.findById(userId)
+    .select("current_plan_id")
+    .lean();
+
+  if (!currentUser) {
+    throw new AppError(404, "유저를 찾을 수 없어요.");
+  }
+
+  if (!currentUser.current_plan_id) {
+    throw new AppError(409, "현재 이용 중인 요금제가 없어요.");
+  }
+
+  const user = await UserModel.findByIdAndUpdate(
+    userId,
+    {
+      $set: {
+        current_plan_id: null,
+        current_plan_options: {},
+        plan_joined_at: null,
+      },
+    },
+    {
+      new: true,
+    },
+  );
+
+  if (!user) {
+    throw new AppError(404, "유저를 찾을 수 없어요.");
+  }
+
+  return {
+    canceledPlanId: currentUser.current_plan_id.toString(),
+  };
+};

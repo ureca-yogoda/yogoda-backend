@@ -1,6 +1,7 @@
 import { Router } from "express";
 
 import {
+  cancelCurrentPlanHandler,
   changePlanHandler,
   getCurrentPlanHandler,
   getPlanByCodeHandler,
@@ -18,6 +19,7 @@ router.get("/", getPlansHandler);
  * 동적 라우트보다 먼저 선언해서 "me"가 요금제 코드로 처리되지 않도록 함
  */
 router.get("/me/current", authMiddleware, getCurrentPlanHandler);
+router.delete("/me/current", authMiddleware, cancelCurrentPlanHandler);
 
 router.post("/:code/join", authMiddleware, joinPlanHandler);
 
