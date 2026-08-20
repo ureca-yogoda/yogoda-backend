@@ -26,6 +26,8 @@ const envSchema = z.object({
   GOOGLE_REDIRECT_URI: z.string().default(""),
   // 콤마로 여러 origin 구분 (로컬 + 배포 프론트 주소 등)
   CORS_ORIGIN: z.string().default("http://localhost:3000"),
+  AI_API_KEY: z.string().optional(),
+  AI_MODEL: z.string().optional(),
 });
 
 type Settings = z.infer<typeof envSchema>;
@@ -33,6 +35,7 @@ type Settings = z.infer<typeof envSchema>;
 // 필수값도 일단 기본값 ""으로 느슨하게 파싱 — Key Vault로 나중에 채워질 수 있어서 assertRequiredEnv()에서 따로 검증
 const settings: Settings = envSchema.parse(process.env);
 
+// AI_API_KEY, AI_MODEL은 선택 기능이라 여기 포함하지 않고 웹소켓 핸들러에서 개별 검증
 const REQUIRED_KEYS = [
   "JWT_SECRET_KEY",
   "JWT_ALGORITHM",
