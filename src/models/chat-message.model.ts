@@ -20,6 +20,7 @@ const chatMessageSchema = new Schema<IChatMessage>(
     content: { type: String, required: true },
   },
   {
+    collection: "chat_messages",
     timestamps: { createdAt: "created_at", updatedAt: false },
     versionKey: false,
   },

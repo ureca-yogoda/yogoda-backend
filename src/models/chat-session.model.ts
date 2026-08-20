@@ -29,6 +29,7 @@ const chatSessionSchema = new Schema<IChatSession>(
     last_interaction_id: { type: String, default: null },
   },
   {
+    collection: "chat_sessions",
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
     versionKey: false,
   },
