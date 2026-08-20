@@ -1,104 +1,161 @@
 import axios from "axios";
 import { env } from "../../core/config/env.js";
-import { AI_SYSTEM_PROMPT } from "./ai.prompt.js";
+import { buildSystemPrompt } from "./ai.prompt.js";
+import type {
+  ChatDecision,
+  PlanCandidate,
+  SurveyAnswers,
+  SurveyContext,
+} from "../../types/chat.js";
+
+const COLLECTED_INFO_SCHEMA = {
+  type: "object",
+  properties: {
+    usageType: { type: "string" },
+    monthlyData: { type: "string" },
+    contentPreference: { type: "string" },
+    benefitPreference: { type: "string" },
+    planPriority: { type: "string" },
+    recommendationPriority: { type: "string" },
+  },
+};
+
+const RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {
+    action: { type: "string", enum: ["ask", "recommend"] },
+    message: { type: "string" },
+    collectedInfo: COLLECTED_INFO_SCHEMA,
+    recommendations: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          code: { type: "string" },
+          matchRate: { type: "number" },
+          reason: { type: "string" },
+        },
+        required: ["code", "matchRate", "reason"],
+      },
+    },
+  },
+  required: ["action", "message"],
+};
+
+interface GetChatDecisionParams {
+  message: string;
+  // Gemini Interactions API가 서버 쪽에서 대화 맥락을 이어가도록 하는 토큰.
+  // 없으면 새 대화로 시작함. (raw 대화 기록을 매번 다시 보낼 필요가 없어짐)
+  previousInteractionId?: string;
+  surveyContext?: SurveyContext;
+  collectedInfo?: SurveyAnswers;
+  plans: PlanCandidate[];
+}
+
+interface ChatDecisionResult {
+  decision: ChatDecision;
+  // 다음 턴에 previousInteractionId로 그대로 다시 넣어줘야 대화가 이어짐
+  interactionId: string;
+}
+
+interface InteractionStep {
+  type?: string;
+  content?: Array<{ type?: string; text?: string }>;
+}
 
 /**
- * AI 모델에 메시지를 보내고, 응답 텍스트 조각을 순서대로 yield합니다.
+ * Gemini Interactions API로 대화를 이어갑니다.
+ * generateContent와 달리 대화 전체를 매번 다시 보내지 않고, previous_interaction_id만
+ * 넘기면 구글 서버가 이전 대화 맥락을 자동으로 이어붙여줍니다.
+ * (system_instruction/response_format은 "이번 턴 한정" 값이라 매번 새로 만들어서 함께 보내야 함)
  */
-export async function* streamAIChatText(
-  message: string,
-): AsyncGenerator<string> {
+export async function getChatDecision({
+  message,
+  previousInteractionId,
+  surveyContext,
+  collectedInfo,
+  plans,
+}: GetChatDecisionParams): Promise<ChatDecisionResult> {
+  // previous_interaction_id가 없으면 이 사용자와의 첫 메시지라는 뜻 — 모델이 스스로
+  // "첫 대화인지"를 판단하다가 인사말을 반복하는 문제가 있어서, 우리가 직접 계산해 알려줌
+  const isFirstTurn = !previousInteractionId;
+  const systemInstruction = buildSystemPrompt(
+    surveyContext,
+    collectedInfo,
+    plans,
+    isFirstTurn,
+  );
+
+  // 대화가 새로 시작되는지 이어지는지, collectedInfo가 잘 이어지는지 확인용
+  console.log(
+    `AI 요청: previous_interaction_id=${previousInteractionId ?? "(없음, 새 대화)"}, collectedInfo=${JSON.stringify(collectedInfo ?? {})}`,
+  );
+
   let response;
 
   try {
     response = await axios({
       method: "post",
-      // alt=sse: 응답을 SSE(빈 줄로 구분된 이벤트) 형식으로 받아서 청크 경계와 상관없이 안전하게 파싱
-      url: `https://generativelanguage.googleapis.com/v1beta/models/${env.AI_MODEL}:streamGenerateContent?alt=sse&key=${env.AI_API_KEY}`,
+      url: "https://generativelanguage.googleapis.com/v1beta/interactions",
+      headers: { "x-goog-api-key": env.AI_API_KEY },
       data: {
-        systemInstruction: {
-          parts: [{ text: AI_SYSTEM_PROMPT }],
+        model: env.AI_MODEL,
+        input: message,
+        ...(previousInteractionId
+          ? { previous_interaction_id: previousInteractionId }
+          : {}),
+        system_instruction: systemInstruction,
+        response_format: {
+          type: "text",
+          mime_type: "application/json",
+          schema: RESPONSE_SCHEMA,
         },
-        contents: [
-          {
-            parts: [{ text: message }],
-          },
-        ],
       },
-      responseType: "stream",
     });
   } catch (err) {
-    // 에러 응답 본문도 스트림으로 오기 때문에 읽어서 실제 원인(예: 모델명 오류로 인한 404)을 로그에 남김
     if (axios.isAxiosError(err) && err.response) {
-      const status = err.response.status;
-      let bodyText = "";
-      try {
-        for await (const chunk of err.response.data) {
-          bodyText += chunk.toString();
-        }
-      } catch {
-        // 본문을 못 읽어도 무시하고 상태 코드만 로깅
-      }
       console.error(
-        `AI API 호출 에러 (status ${status}):`,
-        bodyText || err.message,
+        `AI API 호출 에러 (status ${err.response.status}):`,
+        JSON.stringify(err.response.data),
       );
+
+      // 이전 대화(previous_interaction_id)가 보관 기간 만료 등으로 사라졌다면
+      // 새 대화로 한 번만 재시도함 (collectedInfo는 우리 쪽에 별도로 남아있어 계속 활용됨)
+      if (previousInteractionId && err.response.status === 404) {
+        console.warn(
+          "previous_interaction_id를 찾을 수 없어 새 대화로 재시도합니다.",
+        );
+        return getChatDecision({
+          message,
+          surveyContext,
+          collectedInfo,
+          plans,
+        });
+      }
     } else {
       console.error("AI API 호출 에러:", err);
     }
     throw new Error("AI_REQUEST_FAILED");
   }
 
-  // 네트워크 청크 경계가 SSE 이벤트 경계(빈 줄)와 다를 수 있으므로, 청크마다 바로 파싱하지 않고
-  // 버퍼에 누적하다가 완전한 이벤트가 확보됐을 때만 꺼내서 파싱한다. (텍스트가 중간에 잘려 유실되는 것 방지)
-  let buffer = "";
-  let yieldedAny = false;
+  const interactionId = response.data?.id;
+  const steps: InteractionStep[] = response.data?.steps ?? [];
+  const modelOutputStep = steps.find((step) => step.type === "model_output");
+  const rawText = modelOutputStep?.content?.[0]?.text;
 
-  for await (const chunk of response.data as AsyncIterable<Buffer>) {
-    // 서버가 CRLF(\r\n)로 줄바꿈을 보내는 경우 구분자(\n\n)를 못 찾는 문제 방지
-    buffer += chunk.toString().replace(/\r\n/g, "\n");
-
-    let separatorIdx: number;
-    while ((separatorIdx = buffer.indexOf("\n\n")) !== -1) {
-      const rawEvent = buffer.slice(0, separatorIdx).trim();
-      buffer = buffer.slice(separatorIdx + 2);
-
-      for (const text of extractTextFromSSEEvent(rawEvent)) {
-        yieldedAny = true;
-        yield text;
-      }
-    }
-  }
-
-  // 마지막 이벤트 뒤에 빈 줄이 안 붙어서 버퍼에 남아있는 경우 대비
-  for (const text of extractTextFromSSEEvent(buffer.trim())) {
-    yieldedAny = true;
-    yield text;
-  }
-
-  if (!yieldedAny) {
+  if (typeof rawText !== "string" || typeof interactionId !== "string") {
     console.error(
-      "AI 응답에서 텍스트를 하나도 추출하지 못했습니다. 원본 응답 형식을 확인하세요.",
+      "AI 응답 형식이 예상과 다릅니다:",
+      JSON.stringify(response.data),
     );
+    throw new Error("AI_RESPONSE_INVALID");
   }
-}
-
-function extractTextFromSSEEvent(rawEvent: string): string[] {
-  if (!rawEvent.startsWith("data:")) return [];
-
-  const jsonStr = rawEvent.slice(5).trim();
-  if (!jsonStr) return [];
 
   try {
-    const parsed = JSON.parse(jsonStr);
-    const parts = parsed?.candidates?.[0]?.content?.parts;
-    if (!Array.isArray(parts)) return [];
-
-    return parts
-      .map((part) => part?.text)
-      .filter((text): text is string => typeof text === "string");
+    const decision = JSON.parse(rawText) as ChatDecision;
+    return { decision, interactionId };
   } catch {
-    // 불완전하거나 형식이 다른 이벤트는 건너뜀
-    return [];
+    console.error("AI 응답 JSON 파싱 실패:", rawText);
+    throw new Error("AI_RESPONSE_INVALID");
   }
 }

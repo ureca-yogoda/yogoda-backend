@@ -1,7 +1,7 @@
 {
   "type": "module",
   "scripts": {
-    "dev": "tsx src/server.ts",
+    "dev": "tsx --watch src/server.ts",
     "seed:uplus": "tsx src/seeds/uplus.seed.ts",
     "build": "tsc",
     "start": "node dist/server.js",
