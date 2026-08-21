@@ -9,7 +9,11 @@ export interface IUser {
   provider: Provider;
   provider_id: string;
   refresh_token: string | null;
+
   current_plan_id: Types.ObjectId | null;
+  current_plan_options: Record<string, string[]>;
+  plan_joined_at: Date | null;
+
   user_patterns: Record<string, unknown> | null;
   role: string;
   theme: Theme;
@@ -27,12 +31,27 @@ const userSchema = new Schema<IUser>(
     },
     provider_id: { type: String, required: true },
     refresh_token: { type: String, default: null },
+
     current_plan_id: {
       type: Schema.Types.ObjectId,
       ref: "Plan",
       default: null,
     },
-    user_patterns: { type: Schema.Types.Mixed, default: null },
+
+    current_plan_options: {
+      type: Schema.Types.Mixed,
+      default: {},
+    },
+
+    plan_joined_at: {
+      type: Date,
+      default: null,
+    },
+
+    user_patterns: {
+      type: Schema.Types.Mixed,
+      default: null,
+    },
     role: { type: String, required: true, default: "user" },
     theme: {
       type: String,
