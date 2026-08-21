@@ -1,4 +1,7 @@
-import { ChatMessageModel } from "../models/chat-message.model.js";
+import {
+  ChatMessageModel,
+  type IChatMessagePlanCard,
+} from "../models/chat-message.model.js";
 import { ChatSessionModel } from "../models/chat-session.model.js";
 import type { SurveyAnswers } from "../types/chat.js";
 
@@ -44,19 +47,27 @@ export async function getSessionMessages(sessionId: string) {
     id: doc._id,
     role: doc.role,
     content: doc.content,
+    plans: doc.plans,
     createdAt: doc.created_at,
   }));
 }
 
 /**
  * 메시지 한 건을 세션에 저장하고, 세션의 updated_at을 갱신합니다.
+ * plans는 AI가 요금제를 추천한 메시지에만 함께 넘어오며, 재접속 시 카드를 그대로 복원하는 데 쓰입니다.
  */
 export async function saveMessage(
   sessionId: string,
   role: "user" | "admin",
   content: string,
+  plans?: IChatMessagePlanCard[],
 ) {
-  await ChatMessageModel.create({ session_id: sessionId, role, content });
+  await ChatMessageModel.create({
+    session_id: sessionId,
+    role,
+    content,
+    plans,
+  });
   await ChatSessionModel.updateOne(
     { _id: sessionId },
     { $set: { updated_at: new Date() } },
@@ -96,6 +107,7 @@ export async function updateLastInteractionId(
 export interface GuestChatMessageInput {
   role: "user" | "admin";
   content: string;
+  plans?: IChatMessagePlanCard[];
 }
 
 /**
@@ -125,6 +137,7 @@ export async function importGuestChatHistory(
       session_id: sessionId,
       role: m.role,
       content: m.content,
+      plans: m.plans,
     })),
   );
 

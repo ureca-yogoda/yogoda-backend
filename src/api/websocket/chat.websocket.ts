@@ -142,8 +142,23 @@ export function setupChatSocket(io: Server) {
           plans: candidates,
         });
 
+        // 요금제를 추천하는 응답이면, 텍스트 메시지를 저장할 때 카드도 함께 저장해서
+        // 재접속 시 getSessionMessages()로 그대로 복원되게 함
+        let cards: ReturnType<typeof buildPlanCards> = [];
+        if (
+          decision.action === "recommend" &&
+          decision.recommendations?.length
+        ) {
+          cards = buildPlanCards(decision.recommendations, candidates);
+        }
+
         if (authedSession) {
-          await saveMessage(authedSession.sessionId, "admin", decision.message);
+          await saveMessage(
+            authedSession.sessionId,
+            "admin",
+            decision.message,
+            cards.length > 0 ? cards : undefined,
+          );
           await updateCollectedInfo(
             authedSession.sessionId,
             decision.collectedInfo,
@@ -160,14 +175,8 @@ export function setupChatSocket(io: Server) {
 
         await sendTypedText(socket, decision.message);
 
-        if (
-          decision.action === "recommend" &&
-          decision.recommendations?.length
-        ) {
-          const cards = buildPlanCards(decision.recommendations, candidates);
-          if (cards.length > 0) {
-            socket.emit("plans", cards);
-          }
+        if (cards.length > 0) {
+          socket.emit("plans", cards);
         }
 
         socket.emit("done");
