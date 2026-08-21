@@ -57,7 +57,7 @@ export function buildPlanCards(
       const matchRate = Math.round(Math.min(100, Math.max(0, rec.matchRate)));
 
       return {
-        badge: idx === 0 ? "AI 추천 1순위" : `AI 추천 ${idx + 1}순위`,
+        badge: `Best ${idx + 1}`,
         name: plan.name,
         price: `월 ${fee.toLocaleString()}원`,
         specs: `${plan.dataDisplay} · ${plan.voice}`,
