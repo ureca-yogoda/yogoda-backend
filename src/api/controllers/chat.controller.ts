@@ -6,17 +6,6 @@ import {
 } from "../../services/chat-history.service.js";
 
 /**
- * 비회원 무료 상담 잔여 횟수 조회 컨트롤러 (제한 해제)
- */
-export function getGuestQuota(req: Request, res: Response) {
-  res.status(200).json({
-    remainingQuota: 9999,
-    maxQuota: 9999,
-    isExceeded: false,
-  });
-}
-
-/**
  * 회원의 가장 최근 AI 채팅 세션과 전체 대화 내역을 조회합니다.
  * (로그인 사용자가 채팅 페이지에 들어올 때 이전 대화를 복원하기 위함)
  */
