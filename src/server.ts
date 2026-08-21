@@ -9,6 +9,7 @@ import { Server } from "socket.io";
 import authRoutes from "./api/routes/auth.routes.js";
 import planRoutes from "./api/routes/plan.routes.js";
 import chatRoutes from "./api/routes/chat.routes.js";
+import couponRoutes from "./api/routes/coupon.routes.js";
 import { setupChatSocket } from "./api/websocket/chat.websocket.js";
 import { assertRequiredEnv, env, loadSecrets } from "./core/config/env.js";
 import { swaggerSpec } from "./core/config/swagger.js";
@@ -37,6 +38,7 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use("/api/auth", authRoutes);
 app.use("/api/plans", planRoutes);
 app.use("/api/chats", chatRoutes);
+app.use("/api/coupons", couponRoutes);
 
 app.use(errorHandler);
 
