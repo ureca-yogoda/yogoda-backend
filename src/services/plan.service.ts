@@ -2,6 +2,10 @@ import type { IPlanChoiceBenefit } from "../models/plan.model.js";
 import { PlanModel } from "../models/plan.model.js";
 import { UserModel } from "../models/user.model.js";
 import { AppError } from "../utils/AppError.js";
+import {
+  revokeAvailableCouponsForUser,
+  syncEligibleCouponsForUser,
+} from "./coupon.service.js";
 
 type SelectedPlanOptions = Record<string, string[]>;
 
@@ -219,6 +223,8 @@ export const joinPlan = async (
     throw new AppError(404, "유저를 찾을 수 없어요.");
   }
 
+  await syncEligibleCouponsForUser(userId);
+
   return {
     planCode: plan.code,
     planName: plan.name,
@@ -287,6 +293,10 @@ export const changePlan = async (
     throw new AppError(404, "유저를 찾을 수 없어요.");
   }
 
+  // 기존 요금제 쿠폰을 회수한 뒤 변경된 요금제 기준으로 다시 발급함
+  await revokeAvailableCouponsForUser(userId);
+  await syncEligibleCouponsForUser(userId);
+
   return {
     planCode: plan.code,
     planName: plan.name,
@@ -330,6 +340,8 @@ export const cancelCurrentPlan = async (userId: string) => {
   if (!user) {
     throw new AppError(404, "유저를 찾을 수 없어요.");
   }
+
+  await revokeAvailableCouponsForUser(userId);
 
   return {
     canceledPlanId: currentUser.current_plan_id.toString(),
