@@ -2,6 +2,7 @@ import { PlanModel } from "../models/plan.model.js";
 import type { ChatRecommendation, PlanCandidate } from "../types/chat.js";
 
 export interface PlanCard {
+  code: string;
   badge: string;
   name: string;
   price: string;
@@ -57,6 +58,7 @@ export function buildPlanCards(
       const matchRate = Math.round(Math.min(100, Math.max(0, rec.matchRate)));
 
       return {
+        code: plan.code,
         badge: `Best ${idx + 1}`,
         name: plan.name,
         price: `월 ${fee.toLocaleString()}원`,
