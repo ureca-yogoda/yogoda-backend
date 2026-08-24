@@ -1,4 +1,5 @@
 import { BenefitModel, type IBenefit } from "../models/benefit.model.js";
+import { BenefitLocationModel } from "../models/benefit-location.model.js";
 import { PlanModel } from "../models/plan.model.js";
 import { SavedBenefitModel } from "../models/saved-benefit.model.js";
 import { UserModel } from "../models/user.model.js";
@@ -9,6 +10,12 @@ import {
 } from "./benefit-eligibility.js";
 
 export type BenefitFilter = "all" | "membership" | "partner" | "discount";
+
+interface NearbyBenefitQuery {
+  latitude?: number;
+  longitude?: number;
+  maxDistance?: number;
+}
 
 async function getUserPlan(userId: string): Promise<UserPlanCondition | null> {
   const user = await UserModel.findById(userId)
@@ -120,7 +127,10 @@ export async function saveBenefit(userId: string, code: string) {
     { $setOnInsert: { user_id: userId, benefit_id: benefit._id } },
     { upsert: true },
   );
-  return { code, saved: true };
+  const savedCount = await SavedBenefitModel.countDocuments({
+    user_id: userId,
+  });
+  return { code, saved: true, savedCount };
 }
 
 export async function removeSavedBenefit(userId: string, code: string) {
@@ -154,3 +164,78 @@ export async function getSavedBenefits(userId: string) {
     }),
   };
 }
+
+export async function getNearbyBenefits(
+  userId: string,
+  query: NearbyBenefitQuery,
+) {
+  const hasCoordinates =
+    query.latitude !== undefined && query.longitude !== undefined;
+  const pipeline: PipelineStage[] = [];
+
+  if (hasCoordinates) {
+    pipeline.push({
+      $geoNear: {
+        near: {
+          type: "Point",
+          coordinates: [query.longitude!, query.latitude!],
+        },
+        distanceField: "distanceMeters",
+        maxDistance: query.maxDistance ?? 50000,
+        spherical: true,
+        query: { isActive: true },
+      },
+    });
+  } else {
+    pipeline.push({ $match: { isActive: true } }, { $sort: { name: 1 } });
+  }
+
+  pipeline.push(
+    {
+      $lookup: {
+        from: "benefits",
+        localField: "benefit_id",
+        foreignField: "_id",
+        as: "benefit",
+      },
+    },
+    { $unwind: "$benefit" },
+    { $match: { "benefit.isActive": true } },
+  );
+
+  const [locations, savedBenefits] = await Promise.all([
+    BenefitLocationModel.aggregate(pipeline),
+    SavedBenefitModel.find({ user_id: userId }).select("benefit_id").lean(),
+  ]);
+  const savedIds = new Set(
+    savedBenefits.map((item) => item.benefit_id.toString()),
+  );
+
+  return {
+    locations: locations.map((item) => ({
+      id: String(item._id),
+      code: item.code,
+      name: item.name,
+      category: item.category,
+      address: item.address,
+      phone: item.phone,
+      coordinates: {
+        longitude: item.location.coordinates[0],
+        latitude: item.location.coordinates[1],
+      },
+      distanceKm:
+        typeof item.distanceMeters === "number"
+          ? Math.round((item.distanceMeters / 1000) * 10) / 10
+          : null,
+      benefit: {
+        code: item.benefit.code,
+        brand: item.benefit.brand,
+        title: item.benefit.title,
+        summary: item.benefit.summary,
+        value: item.benefit.value,
+        saved: savedIds.has(String(item.benefit._id)),
+      },
+    })),
+  };
+}
+import type { PipelineStage } from "mongoose";

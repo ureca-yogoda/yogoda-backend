@@ -63,6 +63,24 @@ export const getPlansHandler = async (
   }
 };
 
+export const getComparedPlansHandler = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const plans = await getPlans();
+    await completeMissionFromAction(
+      req.user!.userId,
+      "mission-nerget-plan-compare",
+    );
+
+    res.status(200).json(plans);
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const getPlanByCodeHandler = async (
   req: Request,
   res: Response,

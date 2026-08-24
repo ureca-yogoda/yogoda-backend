@@ -3,6 +3,7 @@ import { Router } from "express";
 import {
   cancelCurrentPlanHandler,
   changePlanHandler,
+  getComparedPlansHandler,
   getCurrentPlanHandler,
   getPlanByCodeHandler,
   getPlansHandler,
@@ -13,6 +14,7 @@ import { authMiddleware } from "../../core/middlewares/auth.middleware.js";
 const router = Router();
 
 router.get("/", getPlansHandler);
+router.get("/me/compare", authMiddleware, getComparedPlansHandler);
 
 /*
  * 현재 로그인한 사용자의 가입 요금제를 조회함
