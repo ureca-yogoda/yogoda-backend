@@ -4,6 +4,7 @@ declare global {
       user?: {
         userId: string;
         nickname: string;
+        role: string;
       };
     }
   }
