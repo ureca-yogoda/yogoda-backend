@@ -1,4 +1,7 @@
-import { ChatMessageModel } from "../models/chat-message.model.js";
+import {
+  ChatMessageModel,
+  type IChatMessagePlanCard,
+} from "../models/chat-message.model.js";
 import { ChatSessionModel } from "../models/chat-session.model.js";
 import type { SurveyAnswers } from "../types/chat.js";
 
@@ -44,19 +47,27 @@ export async function getSessionMessages(sessionId: string) {
     id: doc._id,
     role: doc.role,
     content: doc.content,
+    plans: doc.plans,
     createdAt: doc.created_at,
   }));
 }
 
 /**
  * 메시지 한 건을 세션에 저장하고, 세션의 updated_at을 갱신합니다.
+ * plans는 AI가 요금제를 추천한 메시지에만 함께 넘어오며, 재접속 시 카드를 그대로 복원하는 데 쓰입니다.
  */
 export async function saveMessage(
   sessionId: string,
   role: "user" | "admin",
   content: string,
+  plans?: IChatMessagePlanCard[],
 ) {
-  await ChatMessageModel.create({ session_id: sessionId, role, content });
+  await ChatMessageModel.create({
+    session_id: sessionId,
+    role,
+    content,
+    plans,
+  });
   await ChatSessionModel.updateOne(
     { _id: sessionId },
     { $set: { updated_at: new Date() } },
@@ -91,4 +102,54 @@ export async function updateLastInteractionId(
     { _id: sessionId },
     { $set: { last_interaction_id: interactionId } },
   );
+}
+
+export interface GuestChatMessageInput {
+  role: "user" | "admin";
+  content: string;
+  plans?: IChatMessagePlanCard[];
+}
+
+/**
+ * 비회원(게스트) 상태에서 로컬 스토리지에 쌓인 대화 내역을 로그인 직후 새 회원 세션으로 이관합니다.
+ * - 기존 회원 대화 내역과 섞이지 않도록, 이 호출마다 항상 새 세션을 만들어 그 안에만 저장합니다.
+ * - collectedInfo/interactionId도 함께 넘어오면 새 세션에 반영해 다음 턴부터 이어서 활용합니다.
+ */
+export async function importGuestChatHistory(
+  userId: string,
+  messages: GuestChatMessageInput[],
+  collectedInfo?: SurveyAnswers,
+  lastInteractionId?: string,
+) {
+  if (messages.length === 0) {
+    return null;
+  }
+
+  const session = await ChatSessionModel.create({
+    user_id: userId,
+    type: "AIChat",
+  });
+
+  const sessionId = session._id.toString();
+
+  await ChatMessageModel.insertMany(
+    messages.map((m) => ({
+      session_id: sessionId,
+      role: m.role,
+      content: m.content,
+      plans: m.plans,
+    })),
+  );
+
+  const update: Record<string, unknown> = { updated_at: new Date() };
+  if (collectedInfo && Object.keys(collectedInfo).length > 0) {
+    update.collected_info = collectedInfo;
+  }
+  if (lastInteractionId) {
+    update.last_interaction_id = lastInteractionId;
+  }
+
+  await ChatSessionModel.updateOne({ _id: sessionId }, { $set: update });
+
+  return ChatSessionModel.findById(sessionId);
 }

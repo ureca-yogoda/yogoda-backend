@@ -1,24 +1,27 @@
+import { createServer } from "http";
+
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import swaggerUi from "swagger-ui-express";
-import { WebSocketServer } from "ws";
+import { Server } from "socket.io";
 
 import authRoutes from "./api/routes/auth.routes.js";
 import planRoutes from "./api/routes/plan.routes.js";
 import chatRoutes from "./api/routes/chat.routes.js";
 import couponRoutes from "./api/routes/coupon.routes.js";
-import { setupChatWebSocket } from "./api/websocket/chat.websocket.js";
+import { setupChatSocket } from "./api/websocket/chat.websocket.js";
 import { assertRequiredEnv, env, loadSecrets } from "./core/config/env.js";
 import { swaggerSpec } from "./core/config/swagger.js";
 import { connectDB } from "./core/db/mongoose.js";
 import { errorHandler } from "./core/middlewares/errorHandler.js";
 
 const app = express();
+const corsOrigins = env.CORS_ORIGIN.split(",").map((origin) => origin.trim());
 
 app.use(
   cors({
-    origin: env.CORS_ORIGIN.split(",").map((origin) => origin.trim()),
+    origin: corsOrigins,
     credentials: true,
   }),
 );
@@ -39,30 +42,22 @@ app.use("/api/coupons", couponRoutes);
 
 app.use(errorHandler);
 
-const wss = new WebSocketServer({ noServer: true });
-setupChatWebSocket(wss);
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: corsOrigins,
+    credentials: true,
+  },
+});
+setupChatSocket(io);
 
 async function bootstrap() {
   await loadSecrets();
   assertRequiredEnv();
   await connectDB();
 
-  const server = app.listen(env.PORT, () => {
+  httpServer.listen(env.PORT, () => {
     console.log(`🚀 서버 실행 중 (포트: ${env.PORT})`);
-  });
-
-  server.on("upgrade", (request, socket, head) => {
-    const pathname = new URL(
-      request.url || "",
-      `http://${request.headers.host}`,
-    ).pathname;
-    if (pathname === "/api/chats/stream") {
-      wss.handleUpgrade(request, socket, head, (ws) => {
-        wss.emit("connection", ws, request);
-      });
-    } else {
-      socket.destroy();
-    }
   });
 }
 
