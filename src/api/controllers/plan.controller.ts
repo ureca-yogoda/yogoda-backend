@@ -8,6 +8,7 @@ import {
   getPlans,
   joinPlan,
 } from "../../services/plan.service.js";
+import { completeMissionFromAction } from "../../services/mission.service.js";
 
 type SelectedPlanOptions = Record<string, string[]>;
 
@@ -115,6 +116,7 @@ export const getCurrentPlanHandler = async (
     }
 
     const currentPlan = await getCurrentPlan(userId);
+    await completeMissionFromAction(userId, "mission-security-benefit-check");
 
     res.status(200).json(currentPlan);
   } catch (error) {

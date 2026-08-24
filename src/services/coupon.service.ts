@@ -7,16 +7,12 @@ import { PlanModel } from "../models/plan.model.js";
 import { UserCouponModel } from "../models/user-coupon.model.js";
 import { UserModel } from "../models/user.model.js";
 import { AppError } from "../utils/AppError.js";
+import { meetsMembershipTier } from "./benefit-eligibility.js";
 
 export type CouponFilter =
   "available" | "expiring" | "used" | "expired" | "all";
 
 const EXPIRING_DAYS = 7;
-const membershipRanks: Record<string, number> = {
-  basic: 0,
-  vip: 1,
-  vvip: 2,
-};
 
 function getIssuanceKey(date: Date) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -38,24 +34,6 @@ function createCouponNumber() {
 
 function createBarcodeValue() {
   return randomBytes(16).toString("hex").toUpperCase();
-}
-
-function normalizeMembershipTier(tier: string | null) {
-  return tier?.trim().toLowerCase().replaceAll(" ", "") ?? "basic";
-}
-
-function meetsMembershipTier(
-  currentTier: string | null,
-  minimumTier: string | null,
-) {
-  if (!minimumTier) {
-    return true;
-  }
-
-  const currentRank = membershipRanks[normalizeMembershipTier(currentTier)];
-  const minimumRank = membershipRanks[normalizeMembershipTier(minimumTier)];
-
-  return (currentRank ?? 0) >= (minimumRank ?? 0);
 }
 
 /*

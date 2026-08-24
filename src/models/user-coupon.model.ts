@@ -43,6 +43,7 @@ const userCouponSchema = new Schema<IUserCoupon>(
     used_at: { type: Date, default: null },
   },
   {
+    collection: "user_coupons",
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },
     versionKey: false,
   },

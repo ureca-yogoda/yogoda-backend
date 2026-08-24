@@ -7,6 +7,7 @@ import {
   type GuestChatMessageInput,
 } from "../../services/chat-history.service.js";
 import type { SurveyAnswers } from "../../types/chat.js";
+import { completeMissionFromAction } from "../../services/mission.service.js";
 
 /**
  * 회원의 가장 최근 AI 채팅 세션과 전체 대화 내역을 조회합니다.
@@ -32,6 +33,7 @@ export async function getLatestSession(
     }
 
     const messages = await getSessionMessages(session._id.toString());
+    await completeMissionFromAction(userId, "mission-ai-nerget-diagnosis");
 
     res.status(200).json({
       session: {
