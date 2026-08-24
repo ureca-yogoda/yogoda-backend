@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 import { PromptModel } from "../models/prompt.model.js";
 import {
+  ActivatePromptResponse,
   ActivePromptResponse,
   CreatePromptResponse,
   PromptDetailResponse,
@@ -155,6 +156,45 @@ export const getPromptDetail = async (
     sessionCount: stats.sessionCount,
     isActive: prompt.is_active,
     charCount: prompt.char_count,
+  };
+};
+
+export const activatePromptVersion = async (
+  versionId: string,
+  adminId: string,
+  adminName: string,
+): Promise<ActivatePromptResponse> => {
+  if (!mongoose.isValidObjectId(versionId)) {
+    throw new AppError(404, "해당 버전을 찾을 수 없어요.");
+  }
+
+  const target = await PromptModel.findById(versionId);
+
+  if (!target) {
+    throw new AppError(404, "해당 버전을 찾을 수 없어요.");
+  }
+
+  if (target.is_active) {
+    throw new AppError(400, "이미 활성화된 버전이에요.");
+  }
+
+  await PromptModel.updateMany(
+    { is_active: true },
+    { $set: { is_active: false } },
+  );
+
+  target.is_active = true;
+  target.deployed_at = new Date();
+  target.deployed_by = new mongoose.Types.ObjectId(adminId);
+  await target.save();
+
+  return {
+    versionId: target._id.toString(),
+    version: target.version,
+    isActive: target.is_active,
+    deployedAt: target.deployed_at,
+    deployedBy: adminName,
+    message: `${target.version} 버전이 활성화되었습니다.`,
   };
 };
 

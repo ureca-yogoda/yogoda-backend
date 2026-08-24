@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 
 import {
+  activatePromptVersion,
   createAndDeployPrompt,
   getActivePrompt,
   getPromptDetail,
@@ -79,6 +80,31 @@ export async function getPromptDetailHandler(
     }
 
     res.status(200).json(await getPromptDetail(versionId));
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function activatePromptHandler(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const versionId = req.params.versionId;
+
+    if (typeof versionId !== "string") {
+      res.status(404).json({ message: "해당 버전을 찾을 수 없어요." });
+      return;
+    }
+
+    const result = await activatePromptVersion(
+      versionId,
+      req.user!.userId,
+      req.user!.nickname,
+    );
+
+    res.status(200).json(result);
   } catch (error) {
     next(error);
   }

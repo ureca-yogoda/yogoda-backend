@@ -1,6 +1,7 @@
 import { Router } from "express";
 
 import {
+  activatePromptHandler,
   createPromptHandler,
   getActivePromptHandler,
   getPromptDetailHandler,
@@ -294,6 +295,86 @@ router.get(
   authMiddleware,
   adminMiddleware,
   getPromptDetailHandler,
+);
+
+/**
+ * @swagger
+ * /api/admin/prompts/{versionId}/activate:
+ *   patch:
+ *     summary: 버전 되돌리기
+ *     tags: [Admin/Prompts]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: versionId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 활성화할 프롬프트 버전 ID
+ *     responses:
+ *       200:
+ *         description: 버전 활성화 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 versionId:
+ *                   type: string
+ *                 version:
+ *                   type: string
+ *                 isActive:
+ *                   type: boolean
+ *                 deployedAt:
+ *                   type: string
+ *                   format: date-time
+ *                 deployedBy:
+ *                   type: string
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: 이미 활성화된 버전
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       401:
+ *         description: 인증 실패
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       403:
+ *         description: 관리자가 아님
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       404:
+ *         description: 해당 버전을 찾을 수 없음
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ */
+router.patch(
+  "/:versionId/activate",
+  authMiddleware,
+  adminMiddleware,
+  activatePromptHandler,
 );
 
 export default router;

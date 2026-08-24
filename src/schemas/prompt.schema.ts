@@ -48,3 +48,12 @@ export interface PromptDetailResponse {
   isActive: boolean;
   charCount: number;
 }
+
+export interface ActivatePromptResponse {
+  versionId: string;
+  version: string;
+  isActive: boolean;
+  deployedAt: Date;
+  deployedBy: string;
+  message: string;
+}
