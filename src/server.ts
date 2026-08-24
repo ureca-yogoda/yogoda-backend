@@ -1,36 +1,64 @@
+import { createServer } from "http";
+
 import express from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import swaggerUi from "swagger-ui-express";
-import { env, loadSecrets, assertRequiredEnv } from "./core/config/env.js";
-import { connectDB } from "./core/db/mongoose.js";
-import { swaggerSpec } from "./core/config/swagger.js";
-import { errorHandler } from "./core/middlewares/errorHandler.js";
+import { Server } from "socket.io";
+
 import authRoutes from "./api/routes/auth.routes.js";
+import planRoutes from "./api/routes/plan.routes.js";
+import chatRoutes from "./api/routes/chat.routes.js";
+import couponRoutes from "./api/routes/coupon.routes.js";
+import { setupChatSocket } from "./api/websocket/chat.websocket.js";
+import { assertRequiredEnv, env, loadSecrets } from "./core/config/env.js";
+import { swaggerSpec } from "./core/config/swagger.js";
+import { connectDB } from "./core/db/mongoose.js";
+import { errorHandler } from "./core/middlewares/errorHandler.js";
 
 const app = express();
+const corsOrigins = env.CORS_ORIGIN.split(",").map((origin) => origin.trim());
 
 app.use(
-    cors({
-        origin: env.CORS_ORIGIN.split(",").map((origin) => origin.trim()),
-        credentials: true,
-    }),
+  cors({
+    origin: corsOrigins,
+    credentials: true,
+  }),
 );
-app.use(express.json());
 
-app.get("/", (req, res) => res.redirect("/api-docs"));
+app.use(express.json());
+app.use(cookieParser());
+
+app.get("/", (req, res) => {
+  res.redirect("/api-docs");
+});
+
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
 app.use("/api/auth", authRoutes);
+app.use("/api/plans", planRoutes);
+app.use("/api/chats", chatRoutes);
+app.use("/api/coupons", couponRoutes);
 
 app.use(errorHandler);
 
-async function bootstrap() {
-    await loadSecrets();
-    assertRequiredEnv();
-    await connectDB();
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: corsOrigins,
+    credentials: true,
+  },
+});
+setupChatSocket(io);
 
-    app.listen(env.PORT, () => {
-        console.log(`🚀 서버 실행 중 (포트: ${env.PORT})`);
-    });
+async function bootstrap() {
+  await loadSecrets();
+  assertRequiredEnv();
+  await connectDB();
+
+  httpServer.listen(env.PORT, () => {
+    console.log(`🚀 서버 실행 중 (포트: ${env.PORT})`);
+  });
 }
 
 bootstrap();
