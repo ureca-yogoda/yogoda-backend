@@ -99,7 +99,7 @@ export async function joinMission(userId: string, code: string) {
         joined_at: new Date(),
       },
     },
-    { new: true, upsert: true },
+    { returnDocument: "after", upsert: true },
   );
   return { code, status: record.status, progress: record.progress };
 }
@@ -120,7 +120,7 @@ export async function completeMissionFromAction(userId: string, code: string) {
       $set: { status: "completed", progress: 100, completed_at: new Date() },
       $setOnInsert: { joined_at: new Date(), claimed_at: null },
     },
-    { new: true, upsert: true },
+    { returnDocument: "after", upsert: true },
   );
   return { code, status: record.status, progress: record.progress };
 }
@@ -130,7 +130,7 @@ export async function claimMissionReward(userId: string, code: string) {
   const record = await UserMissionModel.findOneAndUpdate(
     { user_id: userId, mission_id: mission._id, status: "completed" },
     { $set: { status: "claimed", claimed_at: new Date() } },
-    { new: true },
+    { returnDocument: "after" },
   );
   if (!record) {
     throw new AppError(409, "완료한 미션의 보상만 받을 수 있어요.");

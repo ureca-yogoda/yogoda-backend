@@ -269,7 +269,7 @@ export async function useMyCoupon(userId: string, couponId: string) {
       expires_at: { $gt: now },
     },
     { $set: { status: "used", used_at: now } },
-    { new: true },
+    { returnDocument: "after" },
   );
 
   if (!coupon) {

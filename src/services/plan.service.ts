@@ -248,7 +248,7 @@ export const joinPlan = async (
       },
     },
     {
-      new: true,
+      returnDocument: "after",
     },
   );
 
@@ -330,7 +330,7 @@ export const changePlan = async (
       },
     },
     {
-      new: true,
+      returnDocument: "after",
     },
   );
 
@@ -383,7 +383,7 @@ export const cancelCurrentPlan = async (userId: string) => {
       },
     },
     {
-      new: true,
+      returnDocument: "after",
     },
   );
 

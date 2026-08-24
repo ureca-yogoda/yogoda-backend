@@ -11,7 +11,7 @@ export async function addPoints(
   return PointTransactionModel.findOneAndUpdate(
     { user_id: userId, source_key: sourceKey },
     { $setOnInsert: { amount, reason } },
-    { new: true, upsert: true },
+    { returnDocument: "after", upsert: true },
   );
 }
 
