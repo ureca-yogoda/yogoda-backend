@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 import {
   createAndDeployPrompt,
   getActivePrompt,
+  getPromptDetail,
   getPromptHistory,
 } from "../../services/prompt.service.js";
 
@@ -59,6 +60,25 @@ export async function getPromptHistoryHandler(
 ) {
   try {
     res.status(200).json(await getPromptHistory());
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getPromptDetailHandler(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const versionId = req.params.versionId;
+
+    if (typeof versionId !== "string") {
+      res.status(404).json({ message: "해당 버전을 찾을 수 없어요." });
+      return;
+    }
+
+    res.status(200).json(await getPromptDetail(versionId));
   } catch (error) {
     next(error);
   }

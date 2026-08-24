@@ -3,6 +3,7 @@ import { Router } from "express";
 import {
   createPromptHandler,
   getActivePromptHandler,
+  getPromptDetailHandler,
   getPromptHistoryHandler,
 } from "../controllers/prompt.controller.js";
 import {
@@ -215,5 +216,84 @@ router.post("/", authMiddleware, adminMiddleware, createPromptHandler);
  *                   type: string
  */
 router.get("/", authMiddleware, adminMiddleware, getPromptHistoryHandler);
+
+/**
+ * @swagger
+ * /api/admin/prompts/{versionId}:
+ *   get:
+ *     summary: 버전 상세 조회
+ *     tags: [Admin/Prompts]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: versionId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 프롬프트 버전 ID
+ *     responses:
+ *       200:
+ *         description: 버전 상세 조회 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 versionId:
+ *                   type: string
+ *                 version:
+ *                   type: string
+ *                 content:
+ *                   type: string
+ *                 summary:
+ *                   type: string
+ *                 deployedAt:
+ *                   type: string
+ *                   format: date-time
+ *                 deployedBy:
+ *                   type: string
+ *                 conversionRate:
+ *                   type: number
+ *                 sessionCount:
+ *                   type: number
+ *                 isActive:
+ *                   type: boolean
+ *                 charCount:
+ *                   type: number
+ *       401:
+ *         description: 인증 실패
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       403:
+ *         description: 관리자가 아님
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       404:
+ *         description: 해당 버전을 찾을 수 없음
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ */
+router.get(
+  "/:versionId",
+  authMiddleware,
+  adminMiddleware,
+  getPromptDetailHandler,
+);
 
 export default router;

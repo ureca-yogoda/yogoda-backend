@@ -35,3 +35,16 @@ export interface PromptHistoryItem {
 export interface PromptHistoryResponse {
   versions: PromptHistoryItem[];
 }
+
+export interface PromptDetailResponse {
+  versionId: string;
+  version: string;
+  content: string;
+  summary: string;
+  deployedAt: Date;
+  deployedBy: string;
+  conversionRate: number;
+  sessionCount: number;
+  isActive: boolean;
+  charCount: number;
+}

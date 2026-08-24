@@ -4,6 +4,7 @@ import { PromptModel } from "../models/prompt.model.js";
 import {
   ActivePromptResponse,
   CreatePromptResponse,
+  PromptDetailResponse,
   PromptHistoryResponse,
 } from "../schemas/prompt.schema.js";
 import { AppError } from "../utils/AppError.js";
@@ -124,6 +125,37 @@ export const getPromptHistory = async (): Promise<PromptHistoryResponse> => {
 
   // 최신 버전순으로 반환
   return { versions: versions.reverse() };
+};
+
+export const getPromptDetail = async (
+  versionId: string,
+): Promise<PromptDetailResponse> => {
+  if (!mongoose.isValidObjectId(versionId)) {
+    throw new AppError(404, "해당 버전을 찾을 수 없어요.");
+  }
+
+  const prompt = await PromptModel.findById(versionId)
+    .populate<{ deployed_by: PopulatedDeployer }>("deployed_by", "nickname")
+    .lean();
+
+  if (!prompt) {
+    throw new AppError(404, "해당 버전을 찾을 수 없어요.");
+  }
+
+  const stats = await getVersionStats(prompt.version);
+
+  return {
+    versionId: prompt._id.toString(),
+    version: prompt.version,
+    content: prompt.content,
+    summary: prompt.summary,
+    deployedAt: prompt.deployed_at,
+    deployedBy: prompt.deployed_by.nickname,
+    conversionRate: stats.conversionRate,
+    sessionCount: stats.sessionCount,
+    isActive: prompt.is_active,
+    charCount: prompt.char_count,
+  };
 };
 
 export const getActivePrompt = async (): Promise<ActivePromptResponse> => {
