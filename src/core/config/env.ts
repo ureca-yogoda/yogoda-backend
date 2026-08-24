@@ -28,8 +28,8 @@ const envSchema = z.object({
   CORS_ORIGIN: z
     .string()
     .default("http://localhost:3000,https://yogoda-frontend.vercel.app"),
-  AI_API_KEY: z.string().optional(),
-  AI_MODEL: z.string().optional(),
+  AI_API_KEY: z.string().default(""),
+  AI_MODEL: z.string().default(""),
 });
 
 type Settings = z.infer<typeof envSchema>;
