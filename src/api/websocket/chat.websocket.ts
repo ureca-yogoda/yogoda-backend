@@ -186,6 +186,11 @@ export function setupChatSocket(io: Server) {
           socket.emit("plans", cards);
         }
 
+        // 질문(action: ask)에만 빠른 답변 후보를 보여줌 — 추천 결과에는 의미가 없음
+        if (decision.action === "ask" && decision.quickReplies?.length) {
+          socket.emit("quickReplies", decision.quickReplies);
+        }
+
         socket.emit("done");
       } catch (aiError) {
         console.error("AI 채팅 처리 에러:", aiError);
