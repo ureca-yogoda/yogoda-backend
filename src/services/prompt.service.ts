@@ -37,6 +37,55 @@ async function getVersionStats(version: string): Promise<PromptStats> {
   };
 }
 
+function parseVersionNumber(version: string): number {
+  const match = /^v(\d+)$/.exec(version);
+  return match ? Number(match[1]) : 0;
+}
+
+async function getNextVersion(): Promise<string> {
+  const prompts = await PromptModel.find().select("version").lean();
+  const maxNumber = prompts.reduce(
+    (max, prompt) => Math.max(max, parseVersionNumber(prompt.version)),
+    0,
+  );
+
+  return `v${maxNumber + 1}`;
+}
+
+export const createAndDeployPrompt = async (
+  content: string,
+  summary: string,
+  adminId: string,
+  adminName: string,
+) => {
+  const version = await getNextVersion();
+
+  await PromptModel.updateMany(
+    { is_active: true },
+    { $set: { is_active: false } },
+  );
+
+  const prompt = await PromptModel.create({
+    version,
+    content,
+    summary,
+    is_active: true,
+    deployed_at: new Date(),
+    deployed_by: adminId,
+    char_count: content.length,
+  });
+
+  return {
+    versionId: prompt._id.toString(),
+    version: prompt.version,
+    content: prompt.content,
+    summary: prompt.summary,
+    isActive: prompt.is_active,
+    deployedAt: prompt.deployed_at,
+    deployedBy: adminName,
+  };
+};
+
 export const getActivePrompt = async () => {
   const prompt = await PromptModel.findOne({ is_active: true })
     .populate<{ deployed_by: PopulatedDeployer }>("deployed_by", "nickname")

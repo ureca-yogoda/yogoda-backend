@@ -1,6 +1,9 @@
 import { Router } from "express";
 
-import { getActivePromptHandler } from "../controllers/prompt.controller.js";
+import {
+  createPromptHandler,
+  getActivePromptHandler,
+} from "../controllers/prompt.controller.js";
 import {
   adminMiddleware,
   authMiddleware,
@@ -72,5 +75,82 @@ const router = Router();
  *                   type: string
  */
 router.get("/active", authMiddleware, adminMiddleware, getActivePromptHandler);
+
+/**
+ * @swagger
+ * /api/admin/prompts:
+ *   post:
+ *     summary: 새 버전 생성 및 배포
+ *     tags: [Admin/Prompts]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - content
+ *               - summary
+ *             properties:
+ *               content:
+ *                 type: string
+ *                 description: 수정된 프롬프트 전체 내용
+ *               summary:
+ *                 type: string
+ *                 description: 수정 내용 요약 (히스토리용)
+ *     responses:
+ *       200:
+ *         description: 새 버전 생성 및 배포 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 versionId:
+ *                   type: string
+ *                 version:
+ *                   type: string
+ *                 content:
+ *                   type: string
+ *                 summary:
+ *                   type: string
+ *                 isActive:
+ *                   type: boolean
+ *                 deployedAt:
+ *                   type: string
+ *                   format: date-time
+ *                 deployedBy:
+ *                   type: string
+ *       400:
+ *         description: 프롬프트 내용 또는 요약 누락
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       401:
+ *         description: 인증 실패
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       403:
+ *         description: 관리자가 아님
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ */
+router.post("/", authMiddleware, adminMiddleware, createPromptHandler);
 
 export default router;
