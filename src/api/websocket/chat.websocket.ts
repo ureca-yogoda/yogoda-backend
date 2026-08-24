@@ -9,6 +9,7 @@ import {
   updateCollectedInfo,
   updateLastInteractionId,
 } from "../../services/chat-history.service.js";
+import { getCurrentPlan } from "../../services/plan.service.js";
 import {
   buildPlanCards,
   getPlanCandidates,
@@ -56,6 +57,7 @@ async function resolveAuthedSession(
     const activeSessionId = session._id.toString();
 
     return {
+      userId,
       sessionId: activeSessionId,
       isNewSession: activeSessionId !== sessionId,
       collectedInfo:
@@ -132,7 +134,12 @@ export function setupChatSocket(io: Server) {
           await saveMessage(authedSession.sessionId, "user", message);
         }
 
-        const candidates = await getPlanCandidates();
+        // 로그인 사용자가 이미 이용 중인 요금제가 있다면, AI가 같은 요금제를
+        // 다시 추천하지 않도록 후보 목록에서 미리 제외함
+        const currentPlan = authedSession
+          ? await getCurrentPlan(authedSession.userId)
+          : null;
+        const candidates = await getPlanCandidates(currentPlan?.planCode);
 
         const { decision, interactionId } = await getChatDecision({
           message,
