@@ -25,7 +25,7 @@ const router = Router();
  *           default: available
  *     responses:
  *       200:
- *         description: 상태별 쿠폰 개수와 쿠폰 목록
+ *         description: 상태별 쿠폰 개수와 쿠폰 번호·바코드가 포함된 목록
  */
 router.get("/me", authMiddleware, getMyCouponsHandler);
 
