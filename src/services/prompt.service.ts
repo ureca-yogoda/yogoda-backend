@@ -1,6 +1,11 @@
 import mongoose from "mongoose";
 
 import { PromptModel } from "../models/prompt.model.js";
+import {
+  ActivePromptResponse,
+  CreatePromptResponse,
+  PromptHistoryResponse,
+} from "../schemas/prompt.schema.js";
 import { AppError } from "../utils/AppError.js";
 
 type PopulatedDeployer = { _id: mongoose.Types.ObjectId; nickname: string };
@@ -57,7 +62,7 @@ export const createAndDeployPrompt = async (
   summary: string,
   adminId: string,
   adminName: string,
-) => {
+): Promise<CreatePromptResponse> => {
   const version = await getNextVersion();
 
   await PromptModel.updateMany(
@@ -86,7 +91,42 @@ export const createAndDeployPrompt = async (
   };
 };
 
-export const getActivePrompt = async () => {
+export const getPromptHistory = async (): Promise<PromptHistoryResponse> => {
+  const prompts = await PromptModel.find()
+    .sort({ deployed_at: 1 })
+    .populate<{ deployed_by: PopulatedDeployer }>("deployed_by", "nickname")
+    .lean();
+
+  let prevConversionRate: number | null = null;
+  const versions = [];
+
+  for (const prompt of prompts) {
+    const stats = await getVersionStats(prompt.version);
+    const conversionRateChange =
+      prevConversionRate === null
+        ? null
+        : Math.round((stats.conversionRate - prevConversionRate) * 10) / 10;
+
+    versions.push({
+      versionId: prompt._id.toString(),
+      version: prompt.version,
+      summary: prompt.summary,
+      deployedAt: prompt.deployed_at,
+      deployedBy: prompt.deployed_by.nickname,
+      conversionRate: stats.conversionRate,
+      conversionRateChange,
+      sessionCount: stats.sessionCount,
+      isActive: prompt.is_active,
+    });
+
+    prevConversionRate = stats.conversionRate;
+  }
+
+  // 최신 버전순으로 반환
+  return { versions: versions.reverse() };
+};
+
+export const getActivePrompt = async (): Promise<ActivePromptResponse> => {
   const prompt = await PromptModel.findOne({ is_active: true })
     .populate<{ deployed_by: PopulatedDeployer }>("deployed_by", "nickname")
     .lean();
