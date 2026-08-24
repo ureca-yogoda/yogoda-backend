@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from "express";
 import {
   createAndDeployPrompt,
   getActivePrompt,
+  getPromptHistory,
 } from "../../services/prompt.service.js";
 
 export async function getActivePromptHandler(
@@ -46,6 +47,18 @@ export async function createPromptHandler(
     );
 
     res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getPromptHistoryHandler(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    res.status(200).json(await getPromptHistory());
   } catch (error) {
     next(error);
   }
