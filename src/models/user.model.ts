@@ -14,6 +14,8 @@ export interface IUser {
   current_plan_options: Record<string, string[]>;
   plan_joined_at: Date | null;
 
+  previous_monthly_fee: number | null;
+
   user_patterns: Record<string, unknown> | null;
   role: string;
   theme: Theme;
@@ -45,6 +47,11 @@ const userSchema = new Schema<IUser>(
 
     plan_joined_at: {
       type: Date,
+      default: null,
+    },
+
+    previous_monthly_fee: {
+      type: Number,
       default: null,
     },
 
