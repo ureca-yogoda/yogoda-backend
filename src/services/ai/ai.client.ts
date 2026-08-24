@@ -38,6 +38,10 @@ const RESPONSE_SCHEMA = {
         required: ["code", "matchRate", "reason"],
       },
     },
+    quickReplies: {
+      type: "array",
+      items: { type: "string" },
+    },
   },
   required: ["action", "message"],
 };
