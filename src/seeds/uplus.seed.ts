@@ -19,8 +19,6 @@ const membershipSourceUrl =
 const twoPlusSourceUrl = "https://www.lguplus.com/ujam/65";
 const eventSourceUrl = "https://www.lguplus.com/benefit-event/ongoing";
 
-const toDate = (value: string) => new Date(`${value}T00:00:00.000+09:00`);
-
 const legacyUplusPlanCodes = [
   "uplus-plus-plan-130",
   "uplus-plus-plan-115",
@@ -1794,6 +1792,7 @@ const benefits: IBenefit[] = [
     tags: ["멤버십", "쿠폰", "유플투쁠"],
     sourceUrl: twoPlusSourceUrl,
     sortOrder: 80,
+    calendarDay: 1,
   },
   {
     ...commonBenefitFields,
@@ -1815,6 +1814,7 @@ const benefits: IBenefit[] = [
     tags: ["문화", "영화", "제휴", "쿠폰"],
     sourceUrl: twoPlusSourceUrl,
     sortOrder: 90,
+    calendarDay: 5,
   },
   {
     ...commonBenefitFields,
@@ -1836,6 +1836,7 @@ const benefits: IBenefit[] = [
     tags: ["배달", "쿠폰", "제휴"],
     sourceUrl: twoPlusSourceUrl,
     sortOrder: 100,
+    calendarDay: 10,
   },
   {
     ...commonBenefitFields,
@@ -1857,6 +1858,7 @@ const benefits: IBenefit[] = [
     tags: ["쇼핑", "뷰티", "제휴", "쿠폰"],
     sourceUrl: twoPlusSourceUrl,
     sortOrder: 110,
+    calendarDay: 15,
   },
   {
     ...commonBenefitFields,
@@ -1878,6 +1880,7 @@ const benefits: IBenefit[] = [
     tags: ["카페", "커피", "제휴", "쿠폰"],
     sourceUrl: twoPlusSourceUrl,
     sortOrder: 120,
+    calendarDay: 20,
   },
   {
     ...commonBenefitFields,
@@ -1958,11 +1961,11 @@ const missions: IMission[] = [
   },
   {
     code: "mission-uplus-one-attendance",
-    title: "U+one 앱 출석체크",
+    title: "요고다 출석체크",
     category: "attendance",
-    summary: "U+one 앱에서 매일 출석하고 이벤트 보상을 확인하는 미션",
-    requirement: "U+one 앱 접속 후 출석체크 완료",
-    reward: "이벤트 포인트 또는 경품 응모 기회",
+    summary: "요고다에서 매일 출석하고 포인트를 받는 미션",
+    requirement: "요고다 출석 탭에서 오늘 출석 완료",
+    reward: "요고다 포인트",
     period: { startsAt: null, endsAt: null },
     status: "active",
     tags: ["출석", "앱", "이벤트"],
@@ -1975,11 +1978,11 @@ const missions: IMission[] = [
   },
   {
     code: "mission-two-plus-coupon",
-    title: "유플투쁠 쿠폰 받기",
+    title: "내 쿠폰함 확인하기",
     category: "event",
-    summary: "이번 달 유플투쁠 쿠폰을 확인하고 관심 혜택을 받는 미션",
-    requirement: "유플투쁠 혜택 페이지에서 쿠폰 확인",
-    reward: "제휴 쿠폰",
+    summary: "요고다 쿠폰함에서 이번 달에 받은 쿠폰을 확인하는 미션",
+    requirement: "MY 쿠폰함 화면 확인",
+    reward: "요고다 포인트",
     period: { startsAt: null, endsAt: null },
     status: "active",
     tags: ["유플투쁠", "쿠폰", "혜택"],
@@ -1992,11 +1995,11 @@ const missions: IMission[] = [
   },
   {
     code: "mission-security-benefit-check",
-    title: "안심 혜택 확인",
+    title: "내 요금제 확인하기",
     category: "profile",
-    summary: "피싱/해킹 보험처럼 보안 성향 고객에게 맞는 혜택을 확인하는 미션",
-    requirement: "안심 혜택 상세 확인",
-    reward: "보안형 혜택 추천",
+    summary: "현재 이용 중인 요금제와 멤버십 정보를 확인하는 미션",
+    requirement: "MY 나의 요금제 화면 확인",
+    reward: "요고다 포인트",
     period: { startsAt: null, endsAt: null },
     status: "active",
     tags: ["보안", "안심", "혜택"],
@@ -2009,15 +2012,12 @@ const missions: IMission[] = [
   },
   {
     code: "mission-august-event-check",
-    title: "이번 달 이벤트 확인",
+    title: "혜택 둘러보기",
     category: "event",
-    summary: "진행 중인 U+ 이벤트를 확인하고 참여 가능한 이벤트를 찾는 미션",
-    requirement: "진행 중 이벤트 목록 확인",
-    reward: "이벤트 응모 기회",
-    period: {
-      startsAt: toDate("2026-08-01"),
-      endsAt: toDate("2026-08-31"),
-    },
+    summary: "요고다에서 현재 이용할 수 있는 혜택을 확인하는 미션",
+    requirement: "혜택 전체 화면 확인",
+    reward: "요고다 포인트",
+    period: { startsAt: null, endsAt: null },
     status: "active",
     tags: ["이벤트", "8월", "응모"],
     targetUserTags: ["이벤트", "경품", "응모"],

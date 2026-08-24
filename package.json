@@ -3,6 +3,10 @@
   "scripts": {
     "dev": "tsx --watch src/server.ts",
     "seed:uplus": "tsx src/seeds/uplus.seed.ts",
+    "seed:yogoda-missions": "tsx src/seeds/yogoda-missions.seed.ts",
+    "seed:benefit-schedule": "tsx src/seeds/benefit-schedule.seed.ts",
+    "migrate:snake-case": "tsx src/seeds/migrate-snake-case-collections.ts",
+    "cleanup:legacy-collections": "tsx src/seeds/cleanup-legacy-collections.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "lint": "eslint .",
