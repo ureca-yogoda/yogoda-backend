@@ -25,7 +25,9 @@ const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().default(""),
   GOOGLE_REDIRECT_URI: z.string().default(""),
   // 콤마로 여러 origin 구분 (로컬 + 배포 프론트 주소 등)
-  CORS_ORIGIN: z.string().default("http://localhost:3000"),
+  CORS_ORIGIN: z
+    .string()
+    .default("http://localhost:3000,https://yogoda-frontend.vercel.app"),
   AI_API_KEY: z.string().optional(),
   AI_MODEL: z.string().optional(),
 });
