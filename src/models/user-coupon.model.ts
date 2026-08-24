@@ -7,6 +7,8 @@ export interface IUserCoupon {
   user_id: Types.ObjectId;
   benefit_id: Types.ObjectId;
   issuance_key: string;
+  coupon_number: string;
+  barcode_value: string;
   status: UserCouponStatus;
   issued_at: Date;
   expires_at: Date;
@@ -28,6 +30,8 @@ const userCouponSchema = new Schema<IUserCoupon>(
       required: true,
     },
     issuance_key: { type: String, required: true },
+    coupon_number: { type: String, required: true },
+    barcode_value: { type: String, required: true },
     status: {
       type: String,
       enum: ["available", "used", "revoked"],
@@ -50,6 +54,9 @@ userCouponSchema.index(
   { unique: true },
 );
 userCouponSchema.index({ user_id: 1, status: 1, expires_at: 1 });
+// 기존 쿠폰의 필드 보정 전에도 중복 없는 신규 번호를 발급할 수 있게 sparse로 구성함
+userCouponSchema.index({ coupon_number: 1 }, { unique: true, sparse: true });
+userCouponSchema.index({ barcode_value: 1 }, { unique: true, sparse: true });
 
 export const UserCouponModel = model<IUserCoupon>(
   "UserCoupon",
