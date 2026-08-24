@@ -13,6 +13,7 @@ import couponRoutes from "./api/routes/coupon.routes.js";
 import benefitRoutes from "./api/routes/benefit.routes.js";
 import missionRoutes from "./api/routes/mission.routes.js";
 import rewardRoutes from "./api/routes/reward.routes.js";
+import promptRoutes from "./api/routes/prompt.routes.js";
 import { setupChatSocket } from "./api/websocket/chat.websocket.js";
 import { assertRequiredEnv, env, loadSecrets } from "./core/config/env.js";
 import { swaggerSpec } from "./core/config/swagger.js";
@@ -45,6 +46,7 @@ app.use("/api/coupons", couponRoutes);
 app.use("/api/benefits", benefitRoutes);
 app.use("/api/missions", missionRoutes);
 app.use("/api/rewards", rewardRoutes);
+app.use("/api/admin/prompts", promptRoutes);
 
 app.use(errorHandler);
 
