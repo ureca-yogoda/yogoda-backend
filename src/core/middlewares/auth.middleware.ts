@@ -27,6 +27,22 @@ export const authMiddleware = async (
     throw new AppError(404, "유저를 찾을 수 없어요.");
   }
 
-  req.user = { userId: user._id.toString(), nickname: user.nickname };
+  req.user = {
+    userId: user._id.toString(),
+    nickname: user.nickname,
+    role: user.role,
+  };
+  next();
+};
+
+export const adminMiddleware = (
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+) => {
+  if (req.user?.role !== "admin") {
+    throw new AppError(403, "관리자만 접근할 수 있어요.");
+  }
+
   next();
 };
