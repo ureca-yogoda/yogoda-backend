@@ -4,6 +4,7 @@ import {
   type BenefitFilter,
   getBenefit,
   getBenefits,
+  getNearbyBenefits,
   getSavedBenefits,
   removeSavedBenefit,
   saveBenefit,
@@ -11,6 +12,30 @@ import {
 import { completeMissionFromAction } from "../../services/mission.service.js";
 
 const filters: BenefitFilter[] = ["all", "membership", "partner", "discount"];
+
+function getCoordinate(value: unknown) {
+  if (typeof value !== "string" || value.trim() === "") return undefined;
+  const coordinate = Number(value);
+  return Number.isFinite(coordinate) ? coordinate : undefined;
+}
+
+export async function getNearbyBenefitsHandler(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    res.status(200).json(
+      await getNearbyBenefits(req.user!.userId, {
+        latitude: getCoordinate(req.query.latitude),
+        longitude: getCoordinate(req.query.longitude),
+        maxDistance: getCoordinate(req.query.maxDistance),
+      }),
+    );
+  } catch (error) {
+    next(error);
+  }
+}
 
 export async function getBenefitsHandler(
   req: Request,
@@ -57,9 +82,14 @@ export async function saveBenefitHandler(
   next: NextFunction,
 ) {
   try {
-    res
-      .status(200)
-      .json(await saveBenefit(req.user!.userId, String(req.params.code)));
+    const userId = req.user!.userId;
+    const result = await saveBenefit(userId, String(req.params.code));
+
+    if (result.savedCount >= 3) {
+      await completeMissionFromAction(userId, "mission-benefit-preference");
+    }
+
+    res.status(200).json(result);
   } catch (error) {
     next(error);
   }

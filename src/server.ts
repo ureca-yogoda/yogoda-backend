@@ -12,6 +12,7 @@ import chatRoutes from "./api/routes/chat.routes.js";
 import couponRoutes from "./api/routes/coupon.routes.js";
 import benefitRoutes from "./api/routes/benefit.routes.js";
 import missionRoutes from "./api/routes/mission.routes.js";
+import storeRoutes from "./api/routes/store.routes.js";
 import rewardRoutes from "./api/routes/reward.routes.js";
 import { setupChatSocket } from "./api/websocket/chat.websocket.js";
 import { assertRequiredEnv, env, loadSecrets } from "./core/config/env.js";
@@ -44,6 +45,7 @@ app.use("/api/chats", chatRoutes);
 app.use("/api/coupons", couponRoutes);
 app.use("/api/benefits", benefitRoutes);
 app.use("/api/missions", missionRoutes);
+app.use("/api/stores", storeRoutes);
 app.use("/api/rewards", rewardRoutes);
 
 app.use(errorHandler);

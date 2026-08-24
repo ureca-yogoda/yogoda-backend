@@ -20,6 +20,8 @@ const envSchema = z.object({
   KAKAO_REDIRECT_URI: z.string().default(""),
   NAVER_CLIENT_ID: z.string().default(""),
   NAVER_CLIENT_SECRET: z.string().default(""),
+  NAVER_MAP_KEY_ID: z.string().default(""),
+  NAVER_MAP_KEY_SECRET: z.string().default(""),
   NAVER_REDIRECT_URI: z.string().default(""),
   GOOGLE_CLIENT_ID: z.string().default(""),
   GOOGLE_CLIENT_SECRET: z.string().default(""),
