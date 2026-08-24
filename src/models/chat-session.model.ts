@@ -8,6 +8,8 @@ export interface IChatSession {
   type: ChatSessionType;
   collected_info: Record<string, string> | null;
   last_interaction_id: string | null;
+  // 사용자가 "채팅 끝내기"를 누른 시각. null이면 진행 중인 세션임
+  ended_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -27,6 +29,7 @@ const chatSessionSchema = new Schema<IChatSession>(
      * 다음 요청에 previous_interaction_id로 그대로 다시 넣어줘야 대화가 이어짐
      */
     last_interaction_id: { type: String, default: null },
+    ended_at: { type: Date, default: null },
   },
   {
     collection: "chat_sessions",

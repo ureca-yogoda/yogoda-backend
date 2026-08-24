@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 
 import {
+  endChatSession,
   findLatestAIChatSession,
   getSessionMessages,
   importGuestChatHistory,
@@ -38,11 +39,38 @@ export async function getLatestSession(
         id: session._id.toString(),
         createdAt: session.created_at,
         updatedAt: session.updated_at,
+        endedAt: session.ended_at,
       },
       messages,
       collectedInfo: session.collected_info,
       previousInteractionId: session.last_interaction_id,
     });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * 회원이 "채팅 끝내기"를 눌러 현재 진행 중인 AI 채팅 세션을 종료합니다.
+ * 대화 내역은 삭제하지 않고, 다음 접속 시 새 세션으로 시작하도록 표시만 합니다.
+ */
+export async function endSession(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const userId = req.user!.userId;
+    const { sessionId } = req.body as { sessionId?: string };
+
+    if (typeof sessionId !== "string" || sessionId.trim() === "") {
+      res.status(400).json({ message: "sessionId가 올바르지 않아요." });
+      return;
+    }
+
+    await endChatSession(userId, sessionId);
+
+    res.status(200).json({ message: "채팅을 종료했어요." });
   } catch (error) {
     next(error);
   }
