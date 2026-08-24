@@ -56,4 +56,6 @@ export interface ChatDecision {
   // 다음 요청의 시스템 프롬프트에 "이미 아는 정보"로 그대로 다시 실어 보냄
   collectedInfo?: SurveyAnswers;
   recommendations?: ChatRecommendation[];
+  // action이 "ask"일 때, 사용자가 바로 탭해서 보낼 수 있는 짧은 답변 후보 (2~4개)
+  quickReplies?: string[];
 }

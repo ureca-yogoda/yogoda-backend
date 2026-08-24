@@ -16,6 +16,8 @@ export async function findLatestAIChatSession(userId: string) {
 
 /**
  * sessionId로 세션을 조회하되, 본인 소유가 아니거나 없으면 새 세션을 만듭니다.
+ * 이미 "채팅 끝내기"로 종료된 세션이라면 재사용하지 않고 새 세션을 만들어,
+ * 종료된 대화에 새 메시지가 이어붙지 않도록 합니다.
  */
 export async function getOrCreateAIChatSession(
   userId: string,
@@ -26,11 +28,23 @@ export async function getOrCreateAIChatSession(
       _id: sessionId,
       user_id: userId,
       type: "AIChat",
+      ended_at: null,
     });
     if (session) return session;
   }
 
   return ChatSessionModel.create({ user_id: userId, type: "AIChat" });
+}
+
+/**
+ * 회원이 "채팅 끝내기"를 누른 세션을 종료 처리합니다.
+ * 본인 소유의 진행 중인 세션이 아니면 아무 것도 하지 않습니다.
+ */
+export async function endChatSession(userId: string, sessionId: string) {
+  await ChatSessionModel.updateOne(
+    { _id: sessionId, user_id: userId, type: "AIChat", ended_at: null },
+    { $set: { ended_at: new Date() } },
+  );
 }
 
 /**
