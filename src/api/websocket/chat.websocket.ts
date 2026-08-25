@@ -3,6 +3,10 @@ import { Server, Socket } from "socket.io";
 import { env } from "../../core/config/env.js";
 import { verifyToken } from "../../core/security/jwt.js";
 import type { ChatSessionFunnelStage } from "../../models/chat-session.model.js";
+import type {
+  UiEventAction,
+  UiEventElement,
+} from "../../models/ui-event.model.js";
 import { getChatDecision } from "../../services/ai/ai.client.js";
 import {
   recordConversionEvent,
@@ -17,6 +21,7 @@ import {
   buildPlanCards,
   getPlanCandidates,
 } from "../../services/plan-recommendation.service.js";
+import { recordUiEvent } from "../../services/ui-event.service.js";
 import type { SurveyAnswers, SurveyContext } from "../../types/chat.js";
 
 const TYPE_CHUNK_SIZE = 8;
@@ -49,6 +54,34 @@ const FUNNEL_STAGES: ChatSessionFunnelStage[] = [
 function isFunnelStage(value: unknown): value is ChatSessionFunnelStage {
   return (
     typeof value === "string" && (FUNNEL_STAGES as string[]).includes(value)
+  );
+}
+
+interface UiEventPayload {
+  sessionId?: string;
+  element?: string;
+  action?: string;
+}
+
+const UI_EVENT_ELEMENTS: UiEventElement[] = [
+  "plan_detail",
+  "plan_comparison",
+  "signup_button",
+  "benefit_detail",
+  "agent_connect",
+];
+
+const UI_EVENT_ACTIONS: UiEventAction[] = ["view", "click"];
+
+function isUiEventElement(value: unknown): value is UiEventElement {
+  return (
+    typeof value === "string" && (UI_EVENT_ELEMENTS as string[]).includes(value)
+  );
+}
+
+function isUiEventAction(value: unknown): value is UiEventAction {
+  return (
+    typeof value === "string" && (UI_EVENT_ACTIONS as string[]).includes(value)
   );
 }
 
@@ -221,6 +254,22 @@ export function setupChatSocket(io: Server) {
         await recordConversionEvent(currentSessionId, payload.event);
       } catch (err) {
         console.error("전환 이벤트 처리 에러:", err);
+      }
+    });
+
+    socket.on("ui_event", async (payload: UiEventPayload) => {
+      if (
+        !isUiEventElement(payload.element) ||
+        !isUiEventAction(payload.action)
+      ) {
+        return;
+      }
+
+      try {
+        await sessionReady;
+        await recordUiEvent(currentSessionId, payload.element, payload.action);
+      } catch (err) {
+        console.error("UI 이벤트 처리 에러:", err);
       }
     });
 
