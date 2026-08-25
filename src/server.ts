@@ -15,6 +15,7 @@ import missionRoutes from "./api/routes/mission.routes.js";
 import storeRoutes from "./api/routes/store.routes.js";
 import rewardRoutes from "./api/routes/reward.routes.js";
 import promptRoutes from "./api/routes/prompt.routes.js";
+import adminRoutes from "./api/routes/admin.routes.js";
 import { setupChatSocket } from "./api/websocket/chat.websocket.js";
 import { setupNotificationSocket } from "./api/websocket/notification.websocket.js";
 import notificationRoutes from "./api/routes/notification.routes.js";
@@ -52,6 +53,7 @@ app.use("/api/missions", missionRoutes);
 app.use("/api/stores", storeRoutes);
 app.use("/api/rewards", rewardRoutes);
 app.use("/api/admin/prompts", promptRoutes);
+app.use("/api/admin", adminRoutes);
 app.use("/api/notifications", notificationRoutes);
 
 app.use(errorHandler);

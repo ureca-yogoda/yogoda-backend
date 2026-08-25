@@ -1,6 +1,8 @@
 import mongoose from "mongoose";
 
+import { ChatSessionModel } from "../models/chat-session.model.js";
 import { PromptModel } from "../models/prompt.model.js";
+import { DEFAULT_PROMPT_CONTENT } from "./ai/ai.prompt.js";
 import {
   ActivatePromptResponse,
   ActivePromptResponse,
@@ -18,14 +20,12 @@ interface PromptStats {
 }
 
 /*
- * chat_sessions는 아직 prompt_version/last_stage 필드가 모델에 없어(소켓 연동 작업 예정)
- * 컬렉션을 직접 조회함. 필드가 채워지기 전까지는 항상 0건으로 집계되고,
- * 이후 소켓 배선이 끝나면 별도 코드 변경 없이 실제 값으로 채워짐
+ * 소켓 이벤트 배선(session_created/conversion_event) 전까지는
+ * chat_sessions에 prompt_version/last_stage가 채워지지 않아 항상 0건으로 집계됨.
+ * 배선이 끝나면 이 함수는 그대로 둔 채 실제 값으로 채워짐
  */
 async function getVersionStats(version: string): Promise<PromptStats> {
-  const chatSessions = mongoose.connection.collection("chat_sessions");
-
-  const sessionCount = await chatSessions.countDocuments({
+  const sessionCount = await ChatSessionModel.countDocuments({
     prompt_version: version,
   });
 
@@ -33,7 +33,7 @@ async function getVersionStats(version: string): Promise<PromptStats> {
     return { sessionCount: 0, conversionRate: 0 };
   }
 
-  const completedCount = await chatSessions.countDocuments({
+  const completedCount = await ChatSessionModel.countDocuments({
     prompt_version: version,
     last_stage: "signup_completed",
   });
@@ -196,6 +196,36 @@ export const activatePromptVersion = async (
     deployedBy: adminName,
     message: `${target.version} 버전이 활성화되었습니다.`,
   };
+};
+
+/*
+ * 채팅 세션 생성 시점에 "지금 활성 프롬프트가 몇 버전인지"만 가볍게 조회하기 위한 함수.
+ * 활성 프롬프트가 아예 없어도 채팅 자체는 계속 동작해야 하므로 에러를 던지지 않고 null을 반환함
+ */
+export const getActivePromptVersion = async (): Promise<string | null> => {
+  const prompt = await PromptModel.findOne({ is_active: true })
+    .select("version")
+    .lean();
+
+  return prompt?.version ?? null;
+};
+
+/*
+ * 세션에 고정된 프롬프트 버전의 실제 내용을 조회함.
+ * 해당 버전이 없으면 기본값으로 폴백해서 채팅이 멈추지 않게 함
+ */
+export const getPromptContentByVersion = async (
+  version: string | null,
+): Promise<string> => {
+  if (version) {
+    const prompt = await PromptModel.findOne({ version })
+      .select("content")
+      .lean();
+
+    if (prompt) return prompt.content;
+  }
+
+  return DEFAULT_PROMPT_CONTENT;
 };
 
 export const getActivePrompt = async (): Promise<ActivePromptResponse> => {

@@ -160,6 +160,8 @@ export async function notifyIncompleteConsultations() {
   const idleSessions = await ChatSessionModel.find({
     ended_at: null,
     updated_at: { $lte: idleBefore },
+    // 비회원 세션은 알림 보낼 계정이 없으므로 대상에서 제외함
+    user_id: { $ne: null },
   })
     .select("_id user_id")
     .lean();
@@ -167,7 +169,7 @@ export async function notifyIncompleteConsultations() {
   await Promise.all(
     idleSessions.map((session) =>
       createNotification({
-        userId: session.user_id,
+        userId: session.user_id!,
         type: "consultation_incomplete",
         title: "상담이 아직 끝나지 않았어요",
         body: "AI 상담을 이어서 진행하고 딱 맞는 요금제를 추천받아 보세요.",

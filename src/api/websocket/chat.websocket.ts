@@ -1,19 +1,29 @@
 import { Server, Socket } from "socket.io";
 
 import { env } from "../../core/config/env.js";
+import { FUNNEL_STAGES } from "../../constants/funnel-stage.js";
 import { verifyToken } from "../../core/security/jwt.js";
+import type { ChatSessionFunnelStage } from "../../models/chat-session.model.js";
+import type {
+  UiEventAction,
+  UiEventElement,
+} from "../../models/ui-event.model.js";
 import { getChatDecision } from "../../services/ai/ai.client.js";
 import {
-  getOrCreateAIChatSession,
+  finalizeSessionStatus,
+  recordConversionEvent,
+  resolveChatSession,
   saveMessage,
   updateCollectedInfo,
   updateLastInteractionId,
 } from "../../services/chat-history.service.js";
 import { getCurrentPlan } from "../../services/plan.service.js";
+import { getPromptContentByVersion } from "../../services/prompt.service.js";
 import {
   buildPlanCards,
   getPlanCandidates,
 } from "../../services/plan-recommendation.service.js";
+import { recordUiEvent } from "../../services/ui-event.service.js";
 import type { SurveyAnswers, SurveyContext } from "../../types/chat.js";
 
 const TYPE_CHUNK_SIZE = 8;
@@ -23,10 +33,50 @@ interface ChatMessagePayload {
   message?: string;
   simulateError?: boolean;
   surveyContext?: SurveyContext;
-  collectedInfo?: SurveyAnswers;
-  previousInteractionId?: string;
+}
+
+interface ChatSocketAuth {
   token?: string;
   sessionId?: string;
+}
+
+interface ConversionEventPayload {
+  sessionId?: string;
+  event?: string;
+}
+
+function isFunnelStage(value: unknown): value is ChatSessionFunnelStage {
+  return (
+    typeof value === "string" && (FUNNEL_STAGES as string[]).includes(value)
+  );
+}
+
+interface UiEventPayload {
+  sessionId?: string;
+  element?: string;
+  action?: string;
+}
+
+const UI_EVENT_ELEMENTS: UiEventElement[] = [
+  "plan_detail",
+  "plan_comparison",
+  "signup_button",
+  "benefit_detail",
+  "agent_connect",
+];
+
+const UI_EVENT_ACTIONS: UiEventAction[] = ["view", "click"];
+
+function isUiEventElement(value: unknown): value is UiEventElement {
+  return (
+    typeof value === "string" && (UI_EVENT_ELEMENTS as string[]).includes(value)
+  );
+}
+
+function isUiEventAction(value: unknown): value is UiEventAction {
+  return (
+    typeof value === "string" && (UI_EVENT_ACTIONS as string[]).includes(value)
+  );
 }
 
 // AI 응답을 실제로 스트리밍 받지 않아도, 조각내서 순차 전송해 타자기 효과가 자연스럽게 이어지도록 함
@@ -38,32 +88,15 @@ async function sendTypedText(socket: Socket, text: string) {
 }
 
 /**
- * 로그인 토큰이 유효하면 해당 회원의 채팅 세션을 준비하고, 세션에 저장된
- * collectedInfo/interaction id를 불러옵니다. 토큰이 없거나 유효하지 않으면
- * null을 반환해 비회원으로 처리합니다.
+ * 소켓 연결에 실려온 토큰을 검증해 로그인한 유저 id를 반환합니다.
+ * 토큰이 없거나 유효하지 않으면 null을 반환해 비회원으로 처리합니다.
  */
-async function resolveAuthedSession(
-  token: string | undefined,
-  sessionId: string | undefined,
-) {
+function resolveConnectionUserId(token: string | undefined): string | null {
   if (!token) return null;
 
   try {
     const payload = verifyToken(token);
-    const userId = payload.userId as string | undefined;
-    if (!userId) return null;
-
-    const session = await getOrCreateAIChatSession(userId, sessionId);
-    const activeSessionId = session._id.toString();
-
-    return {
-      userId,
-      sessionId: activeSessionId,
-      isNewSession: activeSessionId !== sessionId,
-      collectedInfo:
-        (session.collected_info as SurveyAnswers | null) ?? undefined,
-      previousInteractionId: session.last_interaction_id ?? undefined,
-    };
+    return (payload.userId as string | undefined) ?? null;
   } catch (err) {
     console.error("소켓 토큰 검증 실패, 비회원으로 처리합니다:", err);
     return null;
@@ -79,16 +112,40 @@ export function setupChatSocket(io: Server) {
   chatNamespace.on("connection", (socket: Socket) => {
     console.log("🔌 새로운 소켓 연결 성공");
 
+    const { token, sessionId } = socket.handshake.auth as ChatSocketAuth;
+    const userId = resolveConnectionUserId(token);
+
+    let currentSessionId: string;
+    let promptContent: string;
+    let collectedInfo: SurveyAnswers | undefined;
+    let previousInteractionId: string | undefined;
+
+    /*
+     * connection 핸들러 자체를 async로 만들면 이 구간이 끝나기 전까지
+     * 아래 socket.on("message", ...) 리스너가 등록되지 않아, 그 사이에 클라이언트가
+     * 보낸 이벤트를 통째로 놓칠 수 있음. 그래서 리스너는 동기적으로 먼저 등록해두고,
+     * 각 핸들러 안에서 이 Promise를 await해서 세션이 준비될 때까지만 대기함
+     */
+    const sessionReady = (async () => {
+      const { session } = await resolveChatSession(userId, sessionId);
+
+      currentSessionId = session._id.toString();
+      promptContent = await getPromptContentByVersion(session.prompt_version);
+      console.log(
+        `📝 세션 ${currentSessionId} 프롬프트 버전: ${session.prompt_version ?? "(없음, 기본값 사용)"}`,
+      );
+      collectedInfo =
+        (session.collected_info as SurveyAnswers | null) ?? undefined;
+      previousInteractionId = session.last_interaction_id ?? undefined;
+
+      socket.emit("session_created", {
+        sessionId: currentSessionId,
+        promptVersion: session.prompt_version,
+      });
+    })();
+
     socket.on("message", async (payload: ChatMessagePayload) => {
-      const {
-        message,
-        simulateError,
-        surveyContext,
-        collectedInfo,
-        previousInteractionId,
-        token,
-        sessionId,
-      } = payload;
+      const { message, simulateError, surveyContext } = payload;
 
       if (!message || message.trim() === "") {
         socket.emit("error", "메시지가 유효하지 않습니다.");
@@ -117,36 +174,22 @@ export function setupChatSocket(io: Server) {
       }
 
       try {
-        // 회원이면 DB에 저장된 collectedInfo/interaction id를 진짜 상태로 사용하고,
-        // 비회원이면 프론트에서 매번 함께 보내주는 값을 그대로 사용함
-        const authedSession = await resolveAuthedSession(token, sessionId);
-        const effectiveCollectedInfo = authedSession
-          ? authedSession.collectedInfo
-          : collectedInfo;
-        const effectivePreviousInteractionId = authedSession
-          ? authedSession.previousInteractionId
-          : previousInteractionId;
+        await sessionReady;
 
-        if (authedSession) {
-          if (authedSession.isNewSession) {
-            socket.emit("session", { sessionId: authedSession.sessionId });
-          }
-          await saveMessage(authedSession.sessionId, "user", message);
-        }
+        await saveMessage(currentSessionId, "user", message);
 
         // 로그인 사용자가 이미 이용 중인 요금제가 있다면, AI가 같은 요금제를
         // 다시 추천하지 않도록 후보 목록에서 미리 제외함
-        const currentPlan = authedSession
-          ? await getCurrentPlan(authedSession.userId)
-          : null;
+        const currentPlan = userId ? await getCurrentPlan(userId) : null;
         const candidates = await getPlanCandidates(currentPlan?.planCode);
 
         const { decision, interactionId } = await getChatDecision({
           message,
-          previousInteractionId: effectivePreviousInteractionId,
+          previousInteractionId,
           surveyContext,
-          collectedInfo: effectiveCollectedInfo,
+          collectedInfo,
           plans: candidates,
+          promptContent,
         });
 
         // 요금제를 추천하는 응답이면, 텍스트 메시지를 저장할 때 카드도 함께 저장해서
@@ -159,22 +202,21 @@ export function setupChatSocket(io: Server) {
           cards = buildPlanCards(decision.recommendations, candidates);
         }
 
-        if (authedSession) {
-          await saveMessage(
-            authedSession.sessionId,
-            "admin",
-            decision.message,
-            cards.length > 0 ? cards : undefined,
-          );
-          await updateCollectedInfo(
-            authedSession.sessionId,
-            decision.collectedInfo,
-          );
-          await updateLastInteractionId(authedSession.sessionId, interactionId);
+        await saveMessage(
+          currentSessionId,
+          "ai",
+          decision.message,
+          cards.length > 0 ? cards : undefined,
+        );
+
+        if (decision.collectedInfo) {
+          await updateCollectedInfo(currentSessionId, decision.collectedInfo);
+          collectedInfo = decision.collectedInfo;
         }
 
-        // 다음 턴에도 이어서 활용해야 하므로, 회원/비회원 모두 클라이언트로 전달함
-        // (비회원은 클라이언트가 이 값을 로컬 스토리지에 저장해뒀다가 다음 요청에 다시 실어 보냄)
+        await updateLastInteractionId(currentSessionId, interactionId);
+        previousInteractionId = interactionId;
+
         socket.emit("interaction", { interactionId });
         if (decision.collectedInfo) {
           socket.emit("info", decision.collectedInfo);
@@ -198,8 +240,42 @@ export function setupChatSocket(io: Server) {
       }
     });
 
-    socket.on("disconnect", () => {
+    socket.on("conversion_event", async (payload: ConversionEventPayload) => {
+      if (!isFunnelStage(payload.event)) return;
+
+      try {
+        await sessionReady;
+        await recordConversionEvent(currentSessionId, payload.event);
+      } catch (err) {
+        console.error("전환 이벤트 처리 에러:", err);
+      }
+    });
+
+    socket.on("ui_event", async (payload: UiEventPayload) => {
+      if (
+        !isUiEventElement(payload.element) ||
+        !isUiEventAction(payload.action)
+      ) {
+        return;
+      }
+
+      try {
+        await sessionReady;
+        await recordUiEvent(currentSessionId, payload.element, payload.action);
+      } catch (err) {
+        console.error("UI 이벤트 처리 에러:", err);
+      }
+    });
+
+    socket.on("disconnect", async () => {
       console.log("🔌 소켓 연결 종료");
+
+      try {
+        await sessionReady;
+        await finalizeSessionStatus(currentSessionId);
+      } catch (err) {
+        console.error("세션 종료 처리 에러:", err);
+      }
     });
   });
 }

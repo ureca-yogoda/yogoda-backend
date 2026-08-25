@@ -8,6 +8,7 @@
     "seed:benefit-locations": "tsx src/seeds/benefit-location.seed.ts",
     "seed:stores": "tsx src/seeds/store.seed.ts",
     "migrate:snake-case": "tsx src/seeds/migrate-snake-case-collections.ts",
+    "migrate:chat-message-role": "tsx src/seeds/migrate-chat-message-role.ts",
     "cleanup:legacy-collections": "tsx src/seeds/cleanup-legacy-collections.ts",
     "build": "tsc",
     "start": "node dist/server.js",

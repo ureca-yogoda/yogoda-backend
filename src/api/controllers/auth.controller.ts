@@ -94,6 +94,7 @@ export const googleLoginHandler = async (
       name: result.nickname,
       theme: result.theme,
       isNewUser: result.isNewUser,
+      role: result.role,
     });
   } catch (err: unknown) {
     if (axios.isAxiosError(err) && err.response?.status === 401) {

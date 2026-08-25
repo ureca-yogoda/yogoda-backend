@@ -37,7 +37,7 @@ const router = Router();
  *           type: string
  *         role:
  *           type: string
- *           enum: [user, admin]
+ *           enum: [user, ai]
  *         content:
  *           type: string
  *         plans:
@@ -110,11 +110,12 @@ router.get("/sessions/latest", authMiddleware, getLatestSession);
  * @openapi
  * /api/chats/sessions/import:
  *   post:
- *     summary: 비회원 채팅 내역을 회원 세션으로 이관
+ *     summary: 비회원 채팅 세션을 회원 세션으로 승격
  *     description: |
- *       소셜 로그인 콜백 성공 직후, 비회원(게스트) 상태에서 로컬 스토리지에 쌓인
- *       대화 내역을 새 회원 세션으로 1회 이관합니다. 기존 회원 대화 내역과 섞이지
- *       않도록 항상 새 세션을 생성해 그 안에만 저장합니다.
+ *       소셜 로그인 콜백 성공 직후, 비회원(게스트) 상태에서 소켓 연결 시점에 이미
+ *       만들어진 세션(session_created로 전달받은 sessionId)을 회원 세션으로 승격시킵니다.
+ *       메시지는 이미 그 세션에 실시간 저장돼 있으므로 별도로 넘길 필요가 없습니다.
+ *       다른 유저 소유이거나 이미 종료된 세션은 승격되지 않고 session: null로 응답합니다.
  *     tags: [Chat]
  *     security:
  *       - bearerAuth: []
@@ -124,35 +125,16 @@ router.get("/sessions/latest", authMiddleware, getLatestSession);
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - sessionId
  *             properties:
- *               messages:
- *                 type: array
- *                 items:
- *                   type: object
- *                   required:
- *                     - role
- *                     - content
- *                   properties:
- *                     role:
- *                       type: string
- *                       enum: [user, admin]
- *                     content:
- *                       type: string
- *                     plans:
- *                       type: array
- *                       items:
- *                         $ref: "#/components/schemas/ChatMessagePlanCard"
- *               collectedInfo:
- *                 type: object
- *                 description: 대화로 파악된 사용자 정보 (설문 응답 등)
- *               lastInteractionId:
+ *               sessionId:
  *                 type: string
- *                 description: Gemini Interactions API 맥락 이어가기용 토큰
+ *                 description: session_created로 전달받은 비회원 세션 id
  *     responses:
  *       200:
  *         description: |
- *           이관 완료. messages가 비어 있으면 이관할 내역이 없는 것이므로
- *           session은 null로 응답합니다.
+ *           승격 완료. 승격할 세션을 찾지 못하면 session은 null로 응답합니다.
  *         content:
  *           application/json:
  *             schema:
