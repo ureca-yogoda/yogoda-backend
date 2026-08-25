@@ -1,13 +1,11 @@
 import type { NextFunction, Request, Response } from "express";
 
 import {
+  claimGuestSession,
   endChatSession,
   findLatestAIChatSession,
   getSessionMessages,
-  importGuestChatHistory,
-  type GuestChatMessageInput,
 } from "../../services/chat-history.service.js";
-import type { SurveyAnswers } from "../../types/chat.js";
 import { completeMissionFromAction } from "../../services/mission.service.js";
 
 /**
@@ -79,8 +77,8 @@ export async function endSession(
 }
 
 /**
- * 비회원(게스트) 상태에서 로컬 스토리지에 쌓인 대화 내역을 로그인 직후 회원 세션으로 이관합니다.
- * (소셜 로그인 콜백 성공 직후, 프론트가 게스트 대화 내역을 실어서 1회 호출함)
+ * 비회원(게스트) 상태로 진행 중이던 세션을 로그인 직후 회원 세션으로 승격시킵니다.
+ * (소셜 로그인 콜백 성공 직후, 프론트가 session_created로 받아둔 sessionId를 실어서 1회 호출함)
  */
 export async function importGuestSession(
   req: Request,
@@ -89,22 +87,14 @@ export async function importGuestSession(
 ) {
   try {
     const userId = req.user!.userId;
-    const {
-      messages,
-      collectedInfo,
-      lastInteractionId,
-    }: {
-      messages?: GuestChatMessageInput[];
-      collectedInfo?: SurveyAnswers;
-      lastInteractionId?: string;
-    } = req.body;
+    const { sessionId }: { sessionId?: string } = req.body;
 
-    const session = await importGuestChatHistory(
-      userId,
-      messages ?? [],
-      collectedInfo,
-      lastInteractionId,
-    );
+    if (typeof sessionId !== "string" || sessionId.trim() === "") {
+      res.status(200).json({ session: null });
+      return;
+    }
+
+    const session = await claimGuestSession(userId, sessionId);
 
     if (!session) {
       res.status(200).json({ session: null });

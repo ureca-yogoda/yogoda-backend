@@ -1,3 +1,5 @@
+import mongoose from "mongoose";
+
 import {
   ChatMessageModel,
   type IChatMessagePlanCard,
@@ -171,52 +173,17 @@ export async function recordConversionEvent(
   await session.save();
 }
 
-export interface GuestChatMessageInput {
-  role: "user" | "admin";
-  content: string;
-  plans?: IChatMessagePlanCard[];
-}
-
 /**
- * 비회원(게스트) 상태에서 로컬 스토리지에 쌓인 대화 내역을 로그인 직후 새 회원 세션으로 이관합니다.
- * - 기존 회원 대화 내역과 섞이지 않도록, 이 호출마다 항상 새 세션을 만들어 그 안에만 저장합니다.
- * - collectedInfo/interactionId도 함께 넘어오면 새 세션에 반영해 다음 턴부터 이어서 활용합니다.
+ * 로그인 직후, 비회원 상태로 이미 진행 중이던 세션을 그대로 회원 세션으로 승격시킵니다.
+ * 메시지는 소켓 연결 시점부터 이미 이 세션에 실시간 저장돼 있으므로 복사할 필요가 없고,
+ * user_id만 채워주면 됩니다. (다른 유저가 소유한 세션이나 이미 종료된 세션은 승격하지 않음)
  */
-export async function importGuestChatHistory(
-  userId: string,
-  messages: GuestChatMessageInput[],
-  collectedInfo?: SurveyAnswers,
-  lastInteractionId?: string,
-) {
-  if (messages.length === 0) {
-    return null;
-  }
+export async function claimGuestSession(userId: string, sessionId: string) {
+  if (!mongoose.isValidObjectId(sessionId)) return null;
 
-  const session = await ChatSessionModel.create({
-    user_id: userId,
-    type: "AIChat",
-  });
-
-  const sessionId = session._id.toString();
-
-  await ChatMessageModel.insertMany(
-    messages.map((m) => ({
-      session_id: sessionId,
-      role: m.role,
-      content: m.content,
-      plans: m.plans,
-    })),
+  return ChatSessionModel.findOneAndUpdate(
+    { _id: sessionId, type: "AIChat", user_id: null, ended_at: null },
+    { $set: { user_id: userId } },
+    { new: true },
   );
-
-  const update: Record<string, unknown> = { updated_at: new Date() };
-  if (collectedInfo && Object.keys(collectedInfo).length > 0) {
-    update.collected_info = collectedInfo;
-  }
-  if (lastInteractionId) {
-    update.last_interaction_id = lastInteractionId;
-  }
-
-  await ChatSessionModel.updateOne({ _id: sessionId }, { $set: update });
-
-  return ChatSessionModel.findById(sessionId);
 }
