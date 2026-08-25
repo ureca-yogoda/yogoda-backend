@@ -5,6 +5,7 @@ import {
   getMyCoupons,
   useMyCoupon,
 } from "../../services/coupon.service.js";
+import { completeMissionFromAction } from "../../services/mission.service.js";
 
 const couponFilters: CouponFilter[] = [
   "available",
@@ -32,6 +33,7 @@ export async function getMyCouponsHandler(
     }
 
     const result = await getMyCoupons(userId, requestedStatus as CouponFilter);
+    await completeMissionFromAction(userId, "mission-two-plus-coupon");
 
     res.status(200).json(result);
   } catch (error) {

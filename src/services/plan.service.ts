@@ -27,13 +27,40 @@ export const getPlanByCode = async (code: string) => {
   }).lean();
 };
 
+export interface PlanSavings {
+  amount: number;
+  previousMonthlyFee: number;
+  newMonthlyFee: number;
+}
+
+/*
+ * 이전 요금제 월정액과 새 요금제 월정액을 비교해 절약 금액을 계산함
+ * 이전 요금제 정보가 없으면(최초 가입) null을 반환함
+ */
+function calculateSavings(
+  previousMonthlyFee: number | null | undefined,
+  newMonthlyFee: number,
+): PlanSavings | null {
+  if (previousMonthlyFee === null || previousMonthlyFee === undefined) {
+    return null;
+  }
+
+  return {
+    amount: previousMonthlyFee - newMonthlyFee,
+    previousMonthlyFee,
+    newMonthlyFee,
+  };
+}
+
 /*
  * 로그인한 사용자의 현재 가입 요금제와 선택 혜택을 조회함
  * 가입한 요금제가 없는 사용자는 null을 반환함
  */
 export const getCurrentPlan = async (userId: string) => {
   const user = await UserModel.findById(userId)
-    .select("current_plan_id current_plan_options plan_joined_at")
+    .select(
+      "current_plan_id current_plan_options plan_joined_at previous_monthly_fee",
+    )
     .lean();
 
   if (!user) {
@@ -50,12 +77,16 @@ export const getCurrentPlan = async (userId: string) => {
     return null;
   }
 
+  const newMonthlyFee = plan.discountFee ?? plan.monthlyFee;
+
   return {
     planCode: plan.code,
     planName: plan.name,
     currentPlanId: plan._id.toString(),
     selectedOptions: user.current_plan_options ?? {},
     joinedAt: user.plan_joined_at,
+    monthlyFee: newMonthlyFee,
+    savings: calculateSavings(user.previous_monthly_fee, newMonthlyFee),
   };
 };
 
@@ -212,10 +243,12 @@ export const joinPlan = async (
         current_plan_id: plan._id,
         current_plan_options: selectedOptions,
         plan_joined_at: joinedAt,
+        // 최초 가입은 비교할 이전 요금제가 없으므로 절약 금액을 계산하지 않음
+        previous_monthly_fee: null,
       },
     },
     {
-      new: true,
+      returnDocument: "after",
     },
   );
 
@@ -231,6 +264,8 @@ export const joinPlan = async (
     currentPlanId: plan._id.toString(),
     selectedOptions,
     joinedAt,
+    monthlyFee: plan.discountFee ?? plan.monthlyFee,
+    savings: null,
   };
 };
 
@@ -271,6 +306,15 @@ export const changePlan = async (
     throw new AppError(409, "이미 이용 중인 요금제예요.");
   }
 
+  // 절약 금액 계산을 위해 변경 전 요금제의 실제 청구액을 미리 조회함
+  const previousPlan = await PlanModel.findById(currentUser.current_plan_id)
+    .select("monthlyFee discountFee")
+    .lean();
+
+  const previousMonthlyFee = previousPlan
+    ? (previousPlan.discountFee ?? previousPlan.monthlyFee)
+    : null;
+
   validateSelectedOptions(plan.choiceBenefits, selectedOptions);
 
   const changedAt = new Date();
@@ -282,10 +326,11 @@ export const changePlan = async (
         current_plan_id: plan._id,
         current_plan_options: selectedOptions,
         plan_joined_at: changedAt,
+        previous_monthly_fee: previousMonthlyFee,
       },
     },
     {
-      new: true,
+      returnDocument: "after",
     },
   );
 
@@ -297,12 +342,16 @@ export const changePlan = async (
   await revokeAvailableCouponsForUser(userId);
   await syncEligibleCouponsForUser(userId);
 
+  const newMonthlyFee = plan.discountFee ?? plan.monthlyFee;
+
   return {
     planCode: plan.code,
     planName: plan.name,
     currentPlanId: plan._id.toString(),
     selectedOptions,
     joinedAt: changedAt,
+    monthlyFee: newMonthlyFee,
+    savings: calculateSavings(previousMonthlyFee, newMonthlyFee),
   };
 };
 
@@ -330,10 +379,11 @@ export const cancelCurrentPlan = async (userId: string) => {
         current_plan_id: null,
         current_plan_options: {},
         plan_joined_at: null,
+        previous_monthly_fee: null,
       },
     },
     {
-      new: true,
+      returnDocument: "after",
     },
   );
 

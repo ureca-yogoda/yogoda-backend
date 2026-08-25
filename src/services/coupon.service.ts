@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { isValidObjectId, Types } from "mongoose";
 
 import { BenefitModel } from "../models/benefit.model.js";
@@ -5,16 +7,12 @@ import { PlanModel } from "../models/plan.model.js";
 import { UserCouponModel } from "../models/user-coupon.model.js";
 import { UserModel } from "../models/user.model.js";
 import { AppError } from "../utils/AppError.js";
+import { meetsMembershipTier } from "./benefit-eligibility.js";
 
 export type CouponFilter =
   "available" | "expiring" | "used" | "expired" | "all";
 
 const EXPIRING_DAYS = 7;
-const membershipRanks: Record<string, number> = {
-  basic: 0,
-  vip: 1,
-  vvip: 2,
-};
 
 function getIssuanceKey(date: Date) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -26,22 +24,16 @@ function getEndOfMonth(date: Date) {
   );
 }
 
-function normalizeMembershipTier(tier: string | null) {
-  return tier?.trim().toLowerCase().replaceAll(" ", "") ?? "basic";
+function createCouponNumber() {
+  return randomBytes(6)
+    .toString("hex")
+    .toUpperCase()
+    .match(/.{1,4}/g)!
+    .join("-");
 }
 
-function meetsMembershipTier(
-  currentTier: string | null,
-  minimumTier: string | null,
-) {
-  if (!minimumTier) {
-    return true;
-  }
-
-  const currentRank = membershipRanks[normalizeMembershipTier(currentTier)];
-  const minimumRank = membershipRanks[normalizeMembershipTier(minimumTier)];
-
-  return (currentRank ?? 0) >= (minimumRank ?? 0);
+function createBarcodeValue() {
+  return randomBytes(16).toString("hex").toUpperCase();
 }
 
 /*
@@ -120,6 +112,8 @@ export async function syncEligibleCouponsForUser(userId: string) {
         update: {
           $setOnInsert: {
             status: "available",
+            coupon_number: createCouponNumber(),
+            barcode_value: createBarcodeValue(),
             issued_at: now,
             expires_at: benefit.period.endsAt ?? endOfMonth,
             used_at: null,
@@ -129,6 +123,35 @@ export async function syncEligibleCouponsForUser(userId: string) {
       },
     })),
   );
+}
+
+async function ensureCouponCredentialsForUser(userId: string) {
+  // 기존 발급 데이터에도 번호와 바코드를 채워 스키마 변경 전 쿠폰을 계속 사용할 수 있게 함
+  const couponsWithoutCredentials = await UserCouponModel.find({
+    user_id: userId,
+    $or: [
+      { coupon_number: { $exists: false } },
+      { barcode_value: { $exists: false } },
+    ],
+  })
+    .select("_id")
+    .lean();
+
+  if (couponsWithoutCredentials.length > 0) {
+    await UserCouponModel.bulkWrite(
+      couponsWithoutCredentials.map((coupon) => ({
+        updateOne: {
+          filter: { _id: coupon._id },
+          update: {
+            $set: {
+              coupon_number: createCouponNumber(),
+              barcode_value: createBarcodeValue(),
+            },
+          },
+        },
+      })),
+    );
+  }
 }
 
 function getCouponStatus(
@@ -149,6 +172,7 @@ function getCouponStatus(
 
 export async function getMyCoupons(userId: string, filter: CouponFilter) {
   await syncEligibleCouponsForUser(userId);
+  await ensureCouponCredentialsForUser(userId);
 
   const now = new Date();
   const expiringAt = new Date(
@@ -187,6 +211,9 @@ export async function getMyCoupons(userId: string, filter: CouponFilter) {
         brand: benefit.brand,
         summary: benefit.summary,
         value: benefit.value,
+        couponNumber: coupon.coupon_number,
+        barcodeValue: coupon.barcode_value,
+        barcodeType: "CODE128" as const,
         status,
         expiringSoon,
         issuedAt: coupon.issued_at,
@@ -233,36 +260,47 @@ export async function useMyCoupon(userId: string, couponId: string) {
   }
 
   const now = new Date();
-  const coupon = await UserCouponModel.findOne({
-    _id: new Types.ObjectId(couponId),
-    user_id: userId,
-  });
+  // 상태와 만료 시각을 갱신 조건에 포함해 동시 사용 요청도 한 번만 성공시킴
+  const coupon = await UserCouponModel.findOneAndUpdate(
+    {
+      _id: new Types.ObjectId(couponId),
+      user_id: userId,
+      status: "available",
+      expires_at: { $gt: now },
+    },
+    { $set: { status: "used", used_at: now } },
+    { returnDocument: "after" },
+  );
 
   if (!coupon) {
-    throw new AppError(404, "쿠폰을 찾을 수 없어요.");
-  }
+    const existingCoupon = await UserCouponModel.findOne({
+      _id: new Types.ObjectId(couponId),
+      user_id: userId,
+    })
+      .select("status expires_at")
+      .lean();
 
-  if (coupon.status === "used") {
-    throw new AppError(409, "이미 사용한 쿠폰이에요.");
-  }
+    if (!existingCoupon) {
+      throw new AppError(404, "쿠폰을 찾을 수 없어요.");
+    }
 
-  if (coupon.status !== "available") {
+    if (existingCoupon.status === "used") {
+      throw new AppError(409, "이미 사용한 쿠폰이에요.");
+    }
+
+    if (existingCoupon.expires_at <= now) {
+      throw new AppError(409, "사용 기간이 만료된 쿠폰이에요.");
+    }
+
     throw new AppError(409, "사용할 수 없는 쿠폰이에요.");
   }
-
-  if (coupon.expires_at <= now) {
-    throw new AppError(409, "사용 기간이 만료된 쿠폰이에요.");
-  }
-
-  coupon.status = "used";
-  coupon.used_at = now;
-  await coupon.save();
 
   const benefit = await BenefitModel.findById(coupon.benefit_id).lean();
 
   return {
     id: coupon._id.toString(),
     benefitCode: benefit?.code ?? null,
+    couponNumber: coupon.coupon_number,
     status: "used" as const,
     usedAt: coupon.used_at,
   };

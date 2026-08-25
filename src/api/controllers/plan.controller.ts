@@ -8,6 +8,7 @@ import {
   getPlans,
   joinPlan,
 } from "../../services/plan.service.js";
+import { completeMissionFromAction } from "../../services/mission.service.js";
 
 type SelectedPlanOptions = Record<string, string[]>;
 
@@ -55,6 +56,24 @@ export const getPlansHandler = async (
 ) => {
   try {
     const plans = await getPlans();
+
+    res.status(200).json(plans);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getComparedPlansHandler = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const plans = await getPlans();
+    await completeMissionFromAction(
+      req.user!.userId,
+      "mission-nerget-plan-compare",
+    );
 
     res.status(200).json(plans);
   } catch (error) {
@@ -115,6 +134,7 @@ export const getCurrentPlanHandler = async (
     }
 
     const currentPlan = await getCurrentPlan(userId);
+    await completeMissionFromAction(userId, "mission-security-benefit-check");
 
     res.status(200).json(currentPlan);
   } catch (error) {

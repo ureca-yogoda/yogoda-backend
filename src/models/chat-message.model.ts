@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { Schema, model } from "mongoose";
 
-export type ChatMessageRole = "user" | "admin";
+export type ChatMessageRole = "user" | "ai";
 
 export interface IChatMessagePlanCard {
   code: string;
@@ -40,8 +40,7 @@ const chatMessageSchema = new Schema<IChatMessage>(
   {
     _id: { type: String, default: () => randomUUID() },
     session_id: { type: String, required: true },
-    // AIChat 세션에서는 "admin"이 AI 응답을, AdminChat 세션에서는 실제 상담원 답변을 의미함
-    role: { type: String, required: true, enum: ["user", "admin"] },
+    role: { type: String, required: true, enum: ["user", "ai"] },
     content: { type: String, required: true },
     plans: { type: [chatMessagePlanCardSchema], required: false },
   },

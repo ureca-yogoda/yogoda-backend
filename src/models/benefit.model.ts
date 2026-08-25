@@ -50,6 +50,7 @@ export interface IBenefit {
   sourceCheckedAt: Date;
   isActive: boolean;
   sortOrder: number;
+  calendarDay?: number | null;
   created_at?: Date;
   updated_at?: Date;
 }
@@ -115,6 +116,7 @@ const benefitSchema = new Schema<IBenefit>(
     sourceCheckedAt: { type: Date, required: true },
     isActive: { type: Boolean, required: true, default: true },
     sortOrder: { type: Number, required: true, default: 0 },
+    calendarDay: { type: Number, min: 1, max: 31, default: null },
   },
   {
     timestamps: { createdAt: "created_at", updatedAt: "updated_at" },

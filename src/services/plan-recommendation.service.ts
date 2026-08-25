@@ -14,9 +14,16 @@ export interface PlanCard {
 /**
  * AI 프롬프트에 넣을 요금제 후보 목록을 가져옵니다.
  * 프롬프트 크기를 줄이기 위해 추천 판단에 필요한 필드만 추립니다.
+ * 로그인한 사용자가 이미 이용 중인 요금제가 있다면(excludePlanCode) 후보에서 제외해
+ * AI가 지금 쓰고 있는 요금제를 다시 추천하지 않도록 합니다.
  */
-export async function getPlanCandidates(): Promise<PlanCandidate[]> {
-  const plans = await PlanModel.find({ isActive: true })
+export async function getPlanCandidates(
+  excludePlanCode?: string | null,
+): Promise<PlanCandidate[]> {
+  const plans = await PlanModel.find({
+    isActive: true,
+    ...(excludePlanCode ? { code: { $ne: excludePlanCode } } : {}),
+  })
     .select(
       "code name category monthlyFee discountFee data voice sms membershipTier perks tags recommendationTags",
     )
