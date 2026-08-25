@@ -17,10 +17,13 @@ import rewardRoutes from "./api/routes/reward.routes.js";
 import promptRoutes from "./api/routes/prompt.routes.js";
 import adminRoutes from "./api/routes/admin.routes.js";
 import { setupChatSocket } from "./api/websocket/chat.websocket.js";
+import { setupNotificationSocket } from "./api/websocket/notification.websocket.js";
+import notificationRoutes from "./api/routes/notification.routes.js";
 import { assertRequiredEnv, env, loadSecrets } from "./core/config/env.js";
 import { swaggerSpec } from "./core/config/swagger.js";
 import { connectDB } from "./core/db/mongoose.js";
 import { errorHandler } from "./core/middlewares/errorHandler.js";
+import { startScheduledJobs } from "./core/scheduler.js";
 
 const app = express();
 const corsOrigins = env.CORS_ORIGIN.split(",").map((origin) => origin.trim());
@@ -51,6 +54,7 @@ app.use("/api/stores", storeRoutes);
 app.use("/api/rewards", rewardRoutes);
 app.use("/api/admin/prompts", promptRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 app.use(errorHandler);
 
@@ -62,11 +66,14 @@ const io = new Server(httpServer, {
   },
 });
 setupChatSocket(io);
+setupNotificationSocket(io);
 
 async function bootstrap() {
   await loadSecrets();
   assertRequiredEnv();
   await connectDB();
+
+  startScheduledJobs();
 
   httpServer.listen(env.PORT, () => {
     console.log(`🚀 서버 실행 중 (포트: ${env.PORT})`);
