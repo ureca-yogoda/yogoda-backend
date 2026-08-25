@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 import {
   ChatMessageModel,
+  type ChatMessageRole,
   type IChatMessagePlanCard,
 } from "../models/chat-message.model.js";
 import {
@@ -147,7 +148,7 @@ export async function getSessionMessages(sessionId: string) {
  */
 export async function saveMessage(
   sessionId: string,
-  role: "user" | "admin",
+  role: ChatMessageRole,
   content: string,
   plans?: IChatMessagePlanCard[],
 ) {

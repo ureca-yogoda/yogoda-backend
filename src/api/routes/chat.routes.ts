@@ -37,7 +37,7 @@ const router = Router();
  *           type: string
  *         role:
  *           type: string
- *           enum: [user, admin]
+ *           enum: [user, ai]
  *         content:
  *           type: string
  *         plans:

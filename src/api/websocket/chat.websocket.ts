@@ -211,7 +211,7 @@ export function setupChatSocket(io: Server) {
 
         await saveMessage(
           currentSessionId,
-          "admin",
+          "ai",
           decision.message,
           cards.length > 0 ? cards : undefined,
         );
