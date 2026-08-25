@@ -1,5 +1,6 @@
 import { Router } from "express";
 
+import { getDashboardHandler } from "../controllers/dashboard.controller.js";
 import {
   getSessionDetailHandler,
   getSessionListHandler,
@@ -11,6 +12,118 @@ import {
 } from "../../core/middlewares/auth.middleware.js";
 
 const router = Router();
+
+/**
+ * @swagger
+ * /api/admin/dashboard:
+ *   get:
+ *     summary: 대시보드 전체 조회
+ *     tags: [Admin/Dashboard]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: period
+ *         schema:
+ *           type: string
+ *           enum: [today, 7d, 30d]
+ *           default: today
+ *         description: 조회 기간
+ *     responses:
+ *       200:
+ *         description: 대시보드 조회 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 kpi:
+ *                   type: object
+ *                   properties:
+ *                     consultationCount:
+ *                       type: number
+ *                     consultationChange:
+ *                       type: number
+ *                     consultationPrev:
+ *                       type: number
+ *                     signupCount:
+ *                       type: number
+ *                     signupChange:
+ *                       type: number
+ *                     signupPrev:
+ *                       type: number
+ *                     conversionRate:
+ *                       type: number
+ *                     conversionRateChange:
+ *                       type: number
+ *                     conversionRatePrev:
+ *                       type: number
+ *                 funnel:
+ *                   type: object
+ *                   properties:
+ *                     totalDropRate:
+ *                       type: number
+ *                     maxDropStage:
+ *                       type: string
+ *                       nullable: true
+ *                     stages:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           stage:
+ *                             type: string
+ *                           label:
+ *                             type: string
+ *                           count:
+ *                             type: number
+ *                           entryRate:
+ *                             type: number
+ *                           dropRate:
+ *                             type: number
+ *                             nullable: true
+ *                 promptConversion:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       version:
+ *                         type: string
+ *                       conversionRate:
+ *                         type: number
+ *                       sessionCount:
+ *                         type: number
+ *                       isActive:
+ *                         type: boolean
+ *       400:
+ *         description: 잘못된 쿼리 파라미터
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       401:
+ *         description: 인증 실패
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       403:
+ *         description: 관리자가 아님
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ */
+router.get("/dashboard", authMiddleware, adminMiddleware, getDashboardHandler);
 
 /**
  * @swagger
