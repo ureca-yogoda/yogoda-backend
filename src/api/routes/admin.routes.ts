@@ -4,6 +4,7 @@ import {
   getSessionDetailHandler,
   getSessionListHandler,
 } from "../controllers/session.controller.js";
+import { getUiElementStatsHandler } from "../controllers/ui-element.controller.js";
 import {
   adminMiddleware,
   authMiddleware,
@@ -225,6 +226,90 @@ router.get(
   authMiddleware,
   adminMiddleware,
   getSessionDetailHandler,
+);
+
+/**
+ * @swagger
+ * /api/admin/ui-elements:
+ *   get:
+ *     summary: UI 요소별 성과 조회
+ *     tags: [Admin/UI Elements]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: period
+ *         schema:
+ *           type: string
+ *           enum: [today, 7d, 30d]
+ *           default: today
+ *         description: 조회 기간
+ *     responses:
+ *       200:
+ *         description: UI 요소별 성과 조회 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 totalImpressions:
+ *                   type: number
+ *                 overallCtr:
+ *                   type: number
+ *                 overallCtrChange:
+ *                   type: number
+ *                 elements:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       element:
+ *                         type: string
+ *                       label:
+ *                         type: string
+ *                       impressions:
+ *                         type: number
+ *                       clicks:
+ *                         type: number
+ *                       ctr:
+ *                         type: number
+ *                       ctrChange:
+ *                         type: number
+ *                       lowCtr:
+ *                         type: boolean
+ *       400:
+ *         description: 잘못된 쿼리 파라미터
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       401:
+ *         description: 인증 실패
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       403:
+ *         description: 관리자가 아님
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ */
+router.get(
+  "/ui-elements",
+  authMiddleware,
+  adminMiddleware,
+  getUiElementStatsHandler,
 );
 
 export default router;
