@@ -74,7 +74,7 @@ export async function checkIn(userId: string) {
   const record = await AttendanceRecordModel.findOneAndUpdate(
     { user_id: userId, date_key: dateKey },
     { $setOnInsert: { checked_at: new Date(), points: ATTENDANCE_POINTS } },
-    { new: true, upsert: true },
+    { returnDocument: "after", upsert: true },
   );
   await addPoints(
     userId,
