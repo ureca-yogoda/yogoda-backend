@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 
+import { ChatSessionModel } from "../models/chat-session.model.js";
 import { PromptModel } from "../models/prompt.model.js";
 import {
   ActivatePromptResponse,
@@ -18,14 +19,12 @@ interface PromptStats {
 }
 
 /*
- * chat_sessions는 아직 prompt_version/last_stage 필드가 모델에 없어(소켓 연동 작업 예정)
- * 컬렉션을 직접 조회함. 필드가 채워지기 전까지는 항상 0건으로 집계되고,
- * 이후 소켓 배선이 끝나면 별도 코드 변경 없이 실제 값으로 채워짐
+ * 소켓 이벤트 배선(session_created/conversion_event) 전까지는
+ * chat_sessions에 prompt_version/last_stage가 채워지지 않아 항상 0건으로 집계됨.
+ * 배선이 끝나면 이 함수는 그대로 둔 채 실제 값으로 채워짐
  */
 async function getVersionStats(version: string): Promise<PromptStats> {
-  const chatSessions = mongoose.connection.collection("chat_sessions");
-
-  const sessionCount = await chatSessions.countDocuments({
+  const sessionCount = await ChatSessionModel.countDocuments({
     prompt_version: version,
   });
 
@@ -33,7 +32,7 @@ async function getVersionStats(version: string): Promise<PromptStats> {
     return { sessionCount: 0, conversionRate: 0 };
   }
 
-  const completedCount = await chatSessions.countDocuments({
+  const completedCount = await ChatSessionModel.countDocuments({
     prompt_version: version,
     last_stage: "signup_completed",
   });
