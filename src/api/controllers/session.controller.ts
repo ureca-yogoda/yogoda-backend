@@ -1,6 +1,9 @@
 import type { NextFunction, Request, Response } from "express";
 
-import { getSessionList } from "../../services/session.service.js";
+import {
+  getSessionDetail,
+  getSessionList,
+} from "../../services/session.service.js";
 
 const STATUS_VALUES = ["all", "completed", "dropped"] as const;
 
@@ -36,6 +39,25 @@ export async function getSessionListHandler(
     });
 
     res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getSessionDetailHandler(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const sessionId = req.params.sessionId;
+
+    if (typeof sessionId !== "string") {
+      res.status(404).json({ message: "세션을 찾을 수 없어요." });
+      return;
+    }
+
+    res.status(200).json(await getSessionDetail(sessionId));
   } catch (error) {
     next(error);
   }

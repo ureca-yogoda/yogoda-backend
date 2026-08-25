@@ -27,3 +27,22 @@ export interface SessionListResponse {
   limit: number;
   sessions: SessionListItem[];
 }
+
+export interface SessionDetailMessage {
+  messageId: string;
+  sender: "user" | "ai";
+  content: string;
+  createdAt: Date;
+}
+
+export interface SessionDetailResponse {
+  sessionId: string;
+  userName: string;
+  status: "completed" | "dropped";
+  dropStage: string | null;
+  dropStageLabel: string | null;
+  promptVersion: string | null;
+  createdAt: Date;
+  duration: number;
+  messages: SessionDetailMessage[];
+}

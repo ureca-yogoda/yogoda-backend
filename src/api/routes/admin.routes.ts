@@ -1,6 +1,9 @@
 import { Router } from "express";
 
-import { getSessionListHandler } from "../controllers/session.controller.js";
+import {
+  getSessionDetailHandler,
+  getSessionListHandler,
+} from "../controllers/session.controller.js";
 import {
   adminMiddleware,
   authMiddleware,
@@ -128,5 +131,100 @@ const router = Router();
  *                   type: string
  */
 router.get("/sessions", authMiddleware, adminMiddleware, getSessionListHandler);
+
+/**
+ * @swagger
+ * /api/admin/sessions/{sessionId}:
+ *   get:
+ *     summary: 세션 상세 조회
+ *     tags: [Admin/Sessions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: sessionId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 세션 ID
+ *     responses:
+ *       200:
+ *         description: 세션 상세 조회 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 sessionId:
+ *                   type: string
+ *                 userName:
+ *                   type: string
+ *                 status:
+ *                   type: string
+ *                   enum: [completed, dropped]
+ *                 dropStage:
+ *                   type: string
+ *                   nullable: true
+ *                 dropStageLabel:
+ *                   type: string
+ *                   nullable: true
+ *                 promptVersion:
+ *                   type: string
+ *                   nullable: true
+ *                 createdAt:
+ *                   type: string
+ *                   format: date-time
+ *                 duration:
+ *                   type: number
+ *                   description: 세션 지속 시간 (초)
+ *                 messages:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       messageId:
+ *                         type: string
+ *                       sender:
+ *                         type: string
+ *                         enum: [user, ai]
+ *                       content:
+ *                         type: string
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *       401:
+ *         description: 인증 실패
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       403:
+ *         description: 관리자가 아님
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       404:
+ *         description: 세션을 찾을 수 없음
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ */
+router.get(
+  "/sessions/:sessionId",
+  authMiddleware,
+  adminMiddleware,
+  getSessionDetailHandler,
+);
 
 export default router;
