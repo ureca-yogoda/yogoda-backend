@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 import { ChatSessionModel } from "../models/chat-session.model.js";
 import { PromptModel } from "../models/prompt.model.js";
+import { DEFAULT_PROMPT_CONTENT } from "./ai/ai.prompt.js";
 import {
   ActivatePromptResponse,
   ActivePromptResponse,
@@ -207,6 +208,24 @@ export const getActivePromptVersion = async (): Promise<string | null> => {
     .lean();
 
   return prompt?.version ?? null;
+};
+
+/*
+ * 세션에 고정된 프롬프트 버전의 실제 내용을 조회함.
+ * 해당 버전이 없으면 기본값으로 폴백해서 채팅이 멈추지 않게 함
+ */
+export const getPromptContentByVersion = async (
+  version: string | null,
+): Promise<string> => {
+  if (version) {
+    const prompt = await PromptModel.findOne({ version })
+      .select("content")
+      .lean();
+
+    if (prompt) return prompt.content;
+  }
+
+  return DEFAULT_PROMPT_CONTENT;
 };
 
 export const getActivePrompt = async (): Promise<ActivePromptResponse> => {

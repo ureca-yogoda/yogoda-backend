@@ -10,6 +10,7 @@ import {
   updateLastInteractionId,
 } from "../../services/chat-history.service.js";
 import { getCurrentPlan } from "../../services/plan.service.js";
+import { getPromptContentByVersion } from "../../services/prompt.service.js";
 import {
   buildPlanCards,
   getPlanCandidates,
@@ -67,6 +68,7 @@ export function setupChatSocket(io: Server) {
     const userId = resolveConnectionUserId(token);
 
     let currentSessionId: string;
+    let promptContent: string;
     let collectedInfo: SurveyAnswers | undefined;
     let previousInteractionId: string | undefined;
 
@@ -80,6 +82,10 @@ export function setupChatSocket(io: Server) {
       const { session } = await resolveChatSession(userId, sessionId);
 
       currentSessionId = session._id.toString();
+      promptContent = await getPromptContentByVersion(session.prompt_version);
+      console.log(
+        `📝 세션 ${currentSessionId} 프롬프트 버전: ${session.prompt_version ?? "(없음, 기본값 사용)"}`,
+      );
       collectedInfo =
         (session.collected_info as SurveyAnswers | null) ?? undefined;
       previousInteractionId = session.last_interaction_id ?? undefined;
@@ -135,6 +141,7 @@ export function setupChatSocket(io: Server) {
           surveyContext,
           collectedInfo,
           plans: candidates,
+          promptContent,
         });
 
         // 요금제를 추천하는 응답이면, 텍스트 메시지를 저장할 때 카드도 함께 저장해서

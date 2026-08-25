@@ -54,6 +54,8 @@ interface GetChatDecisionParams {
   surveyContext?: SurveyContext;
   collectedInfo?: SurveyAnswers;
   plans: PlanCandidate[];
+  // 세션에 고정된 프롬프트 버전의 내용. 관리자가 관리하는 페르소나/대화 규칙 부분만 담고 있음
+  promptContent: string;
 }
 
 interface ChatDecisionResult {
@@ -79,11 +81,13 @@ export async function getChatDecision({
   surveyContext,
   collectedInfo,
   plans,
+  promptContent,
 }: GetChatDecisionParams): Promise<ChatDecisionResult> {
   // previous_interaction_id가 없으면 이 사용자와의 첫 메시지라는 뜻 — 모델이 스스로
   // "첫 대화인지"를 판단하다가 인사말을 반복하는 문제가 있어서, 우리가 직접 계산해 알려줌
   const isFirstTurn = !previousInteractionId;
   const systemInstruction = buildSystemPrompt(
+    promptContent,
     surveyContext,
     collectedInfo,
     plans,
@@ -134,6 +138,7 @@ export async function getChatDecision({
           surveyContext,
           collectedInfo,
           plans,
+          promptContent,
         });
       }
     } else {
