@@ -9,6 +9,7 @@ import type {
 } from "../../models/ui-event.model.js";
 import { getChatDecision } from "../../services/ai/ai.client.js";
 import {
+  finalizeSessionStatus,
   recordConversionEvent,
   resolveChatSession,
   saveMessage,
@@ -273,8 +274,15 @@ export function setupChatSocket(io: Server) {
       }
     });
 
-    socket.on("disconnect", () => {
+    socket.on("disconnect", async () => {
       console.log("🔌 소켓 연결 종료");
+
+      try {
+        await sessionReady;
+        await finalizeSessionStatus(currentSessionId);
+      } catch (err) {
+        console.error("세션 종료 처리 에러:", err);
+      }
     });
   });
 }

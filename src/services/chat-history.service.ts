@@ -29,6 +29,33 @@ export async function findLatestAIChatSession(userId: string) {
   });
 }
 
+/*
+ * status는 disconnect 시점에 "이제 끝났다"고 확정한 값이라, 다시 연결해서 대화를
+ * 이어가면 아직 끝난 게 아니므로 null로 되돌려야 나중에 정확히 재확정됨
+ */
+async function reactivateSession(
+  session: NonNullable<Awaited<ReturnType<typeof ChatSessionModel.findOne>>>,
+  userId: string | null,
+) {
+  let needsSave = false;
+
+  if (userId && session.user_id === null) {
+    session.user_id = userId;
+    needsSave = true;
+  }
+
+  if (session.status !== null) {
+    session.status = null;
+    needsSave = true;
+  }
+
+  if (needsSave) {
+    await session.save();
+  }
+
+  return session;
+}
+
 /**
  * 소켓이 연결되는 시점에 세션을 확보합니다. (회원/비회원 공통)
  * 비회원 세션에 로그인 유저가 들어오면 새로 만들지 않고 그 자리에서 user_id만 채워
@@ -51,12 +78,26 @@ export async function resolveChatSession(
     });
 
     if (session) {
-      if (userId && session.user_id === null) {
-        session.user_id = userId;
-        await session.save();
-      }
-
+      await reactivateSession(session, userId);
       return { session, isNewSession: false };
+    }
+  }
+
+  /*
+   * 로그인 유저인데 sessionId가 없거나 못 찾았으면, 새로 만들기 전에 그 유저의
+   * 진행 중인 최신 세션이 있는지 먼저 확인함. 클라이언트가 sessionId를 깜빡 안 보내도
+   * 세션이 쪼개지지 않도록 하는 안전장치
+   */
+  if (userId) {
+    const latestSession = await ChatSessionModel.findOne({
+      user_id: userId,
+      type: "AIChat",
+      ended_at: null,
+    }).sort({ updated_at: -1 });
+
+    if (latestSession) {
+      await reactivateSession(latestSession, userId);
+      return { session: latestSession, isNewSession: false };
     }
   }
 
@@ -170,6 +211,20 @@ export async function recordConversionEvent(
   if (FUNNEL_STAGE_ORDER[stage] <= currentOrder) return;
 
   session.last_stage = stage;
+  await session.save();
+}
+
+/**
+ * 소켓 연결이 끊길 때, 아직 판정되지 않은(status: null) 세션의 status를
+ * last_stage 기준으로 확정합니다. 이미 확정된 세션은 건드리지 않습니다.
+ */
+export async function finalizeSessionStatus(sessionId: string) {
+  const session =
+    await ChatSessionModel.findById(sessionId).select("status last_stage");
+  if (!session || session.status !== null) return;
+
+  session.status =
+    session.last_stage === "signup_completed" ? "completed" : "dropped";
   await session.save();
 }
 
