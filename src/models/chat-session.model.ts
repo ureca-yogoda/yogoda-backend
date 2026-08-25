@@ -13,7 +13,8 @@ export type ChatSessionFunnelStage =
 
 export interface IChatSession {
   _id: Types.ObjectId;
-  user_id: string;
+  // 비회원으로 시작한 세션은 로그인 전까지 null. 로그인 시 기존 세션에 채워짐
+  user_id: string | null;
   type: ChatSessionType;
   collected_info: Record<string, string> | null;
   last_interaction_id: string | null;
@@ -31,7 +32,7 @@ export interface IChatSession {
 
 const chatSessionSchema = new Schema<IChatSession>(
   {
-    user_id: { type: String, required: true },
+    user_id: { type: String, default: null },
     type: { type: String, required: true, enum: ["AIChat", "AdminChat"] },
     /*
      * 대화로 파악된 정보(데이터 사용량/OTT 선호 등)를 세션에 함께 저장해두면,
