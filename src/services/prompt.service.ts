@@ -197,6 +197,18 @@ export const activatePromptVersion = async (
   };
 };
 
+/*
+ * 채팅 세션 생성 시점에 "지금 활성 프롬프트가 몇 버전인지"만 가볍게 조회하기 위한 함수.
+ * 활성 프롬프트가 아예 없어도 채팅 자체는 계속 동작해야 하므로 에러를 던지지 않고 null을 반환함
+ */
+export const getActivePromptVersion = async (): Promise<string | null> => {
+  const prompt = await PromptModel.findOne({ is_active: true })
+    .select("version")
+    .lean();
+
+  return prompt?.version ?? null;
+};
+
 export const getActivePrompt = async (): Promise<ActivePromptResponse> => {
   const prompt = await PromptModel.findOne({ is_active: true })
     .populate<{ deployed_by: PopulatedDeployer }>("deployed_by", "nickname")

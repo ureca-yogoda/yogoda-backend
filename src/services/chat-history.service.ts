@@ -3,6 +3,7 @@ import {
   type IChatMessagePlanCard,
 } from "../models/chat-message.model.js";
 import { ChatSessionModel } from "../models/chat-session.model.js";
+import { getActivePromptVersion } from "./prompt.service.js";
 import type { SurveyAnswers } from "../types/chat.js";
 
 /**
@@ -15,25 +16,44 @@ export async function findLatestAIChatSession(userId: string) {
 }
 
 /**
- * sessionId로 세션을 조회하되, 본인 소유가 아니거나 없으면 새 세션을 만듭니다.
- * 이미 "채팅 끝내기"로 종료된 세션이라면 재사용하지 않고 새 세션을 만들어,
- * 종료된 대화에 새 메시지가 이어붙지 않도록 합니다.
+ * 소켓이 연결되는 시점에 세션을 확보합니다. (회원/비회원 공통)
+ * 비회원 세션에 로그인 유저가 들어오면 새로 만들지 않고 그 자리에서 user_id만 채워
+ * 승격시켜서, 퍼널 기록이 세션 두 개로 쪼개지지 않게 합니다.
  */
-export async function getOrCreateAIChatSession(
-  userId: string,
+export async function resolveChatSession(
+  userId: string | null,
   sessionId?: string,
 ) {
   if (sessionId) {
+    const ownershipFilter = userId
+      ? { $or: [{ user_id: userId }, { user_id: null }] }
+      : { user_id: null };
+
     const session = await ChatSessionModel.findOne({
       _id: sessionId,
-      user_id: userId,
       type: "AIChat",
       ended_at: null,
+      ...ownershipFilter,
     });
-    if (session) return session;
+
+    if (session) {
+      if (userId && session.user_id === null) {
+        session.user_id = userId;
+        await session.save();
+      }
+
+      return { session, isNewSession: false };
+    }
   }
 
-  return ChatSessionModel.create({ user_id: userId, type: "AIChat" });
+  const promptVersion = await getActivePromptVersion();
+  const session = await ChatSessionModel.create({
+    user_id: userId,
+    type: "AIChat",
+    prompt_version: promptVersion,
+  });
+
+  return { session, isNewSession: true };
 }
 
 /**
