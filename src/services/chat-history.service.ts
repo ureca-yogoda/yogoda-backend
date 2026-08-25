@@ -2,9 +2,21 @@ import {
   ChatMessageModel,
   type IChatMessagePlanCard,
 } from "../models/chat-message.model.js";
-import { ChatSessionModel } from "../models/chat-session.model.js";
+import {
+  ChatSessionModel,
+  type ChatSessionFunnelStage,
+} from "../models/chat-session.model.js";
 import { getActivePromptVersion } from "./prompt.service.js";
 import type { SurveyAnswers } from "../types/chat.js";
+
+// 퍼널 단계의 진행 순서. last_stage가 뒤로 후퇴하지 않도록 순서를 비교하는 데 씀
+const FUNNEL_STAGE_ORDER: Record<ChatSessionFunnelStage, number> = {
+  consultation_started: 1,
+  recommendation_completed: 2,
+  plan_comparison_viewed: 3,
+  signup_started: 4,
+  signup_completed: 5,
+};
 
 /**
  * 회원의 가장 최근 AI 채팅 세션을 조회합니다. (채팅 내역 불러오기용)
@@ -136,6 +148,27 @@ export async function updateLastInteractionId(
     { _id: sessionId },
     { $set: { last_interaction_id: interactionId } },
   );
+}
+
+/**
+ * 세션이 도달한 퍼널 단계를 기록합니다. (이미 기록된 단계보다 앞선 단계일 때만 갱신)
+ */
+export async function recordConversionEvent(
+  sessionId: string,
+  stage: ChatSessionFunnelStage,
+) {
+  const session =
+    await ChatSessionModel.findById(sessionId).select("last_stage");
+  if (!session) return;
+
+  const currentOrder = session.last_stage
+    ? FUNNEL_STAGE_ORDER[session.last_stage]
+    : 0;
+
+  if (FUNNEL_STAGE_ORDER[stage] <= currentOrder) return;
+
+  session.last_stage = stage;
+  await session.save();
 }
 
 export interface GuestChatMessageInput {

@@ -2,8 +2,10 @@ import { Server, Socket } from "socket.io";
 
 import { env } from "../../core/config/env.js";
 import { verifyToken } from "../../core/security/jwt.js";
+import type { ChatSessionFunnelStage } from "../../models/chat-session.model.js";
 import { getChatDecision } from "../../services/ai/ai.client.js";
 import {
+  recordConversionEvent,
   resolveChatSession,
   saveMessage,
   updateCollectedInfo,
@@ -29,6 +31,25 @@ interface ChatMessagePayload {
 interface ChatSocketAuth {
   token?: string;
   sessionId?: string;
+}
+
+interface ConversionEventPayload {
+  sessionId?: string;
+  event?: string;
+}
+
+const FUNNEL_STAGES: ChatSessionFunnelStage[] = [
+  "consultation_started",
+  "recommendation_completed",
+  "plan_comparison_viewed",
+  "signup_started",
+  "signup_completed",
+];
+
+function isFunnelStage(value: unknown): value is ChatSessionFunnelStage {
+  return (
+    typeof value === "string" && (FUNNEL_STAGES as string[]).includes(value)
+  );
 }
 
 // AI 응답을 실제로 스트리밍 받지 않아도, 조각내서 순차 전송해 타자기 효과가 자연스럽게 이어지도록 함
@@ -189,6 +210,17 @@ export function setupChatSocket(io: Server) {
       } catch (aiError) {
         console.error("AI 채팅 처리 에러:", aiError);
         socket.emit("error", "AI 서버 연결에 실패했습니다.");
+      }
+    });
+
+    socket.on("conversion_event", async (payload: ConversionEventPayload) => {
+      if (!isFunnelStage(payload.event)) return;
+
+      try {
+        await sessionReady;
+        await recordConversionEvent(currentSessionId, payload.event);
+      } catch (err) {
+        console.error("전환 이벤트 처리 에러:", err);
       }
     });
 
