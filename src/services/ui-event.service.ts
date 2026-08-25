@@ -4,10 +4,16 @@ import {
   type UiEventElement,
 } from "../models/ui-event.model.js";
 import type {
-  StatsPeriod,
   UiElementStat,
   UiElementStatsResponse,
 } from "../schemas/ui-element.schema.js";
+import {
+  calculatePercentage,
+  getPeriodRange,
+  getPreviousRange,
+  type DateRange,
+  type StatsPeriod,
+} from "../utils/stats.js";
 
 export async function recordUiEvent(
   sessionId: string,
@@ -31,31 +37,6 @@ const ELEMENT_LABELS: Record<UiEventElement, string> = {
 
 const LOW_CTR_THRESHOLD = 30;
 
-interface DateRange {
-  start: Date;
-  end: Date;
-}
-
-// today는 오늘 00:00(UTC)부터 지금까지, 7d/30d는 지금부터 과거로 롤링 윈도우
-function getPeriodRange(period: StatsPeriod): DateRange {
-  const end = new Date();
-
-  if (period === "today") {
-    const start = new Date(end);
-    start.setUTCHours(0, 0, 0, 0);
-    return { start, end };
-  }
-
-  const days = period === "7d" ? 7 : 30;
-  return { start: new Date(end.getTime() - days * 24 * 60 * 60 * 1000), end };
-}
-
-// "전주 대비"를 기간 길이와 무관하게 일반화: 현재 조회 기간 바로 직전의 동일한 길이 구간
-function getPreviousRange({ start, end }: DateRange): DateRange {
-  const durationMs = end.getTime() - start.getTime();
-  return { start: new Date(start.getTime() - durationMs), end: start };
-}
-
 async function countByAction(
   element: UiEventElement,
   action: UiEventAction,
@@ -66,11 +47,6 @@ async function countByAction(
     action,
     created_at: { $gte: range.start, $lt: range.end },
   });
-}
-
-function calculateCtr(clicks: number, impressions: number): number {
-  if (impressions === 0) return 0;
-  return Math.round((clicks / impressions) * 1000) / 10;
 }
 
 export const getUiElementStats = async (
@@ -94,8 +70,8 @@ export const getUiElementStats = async (
         countByAction(element, "click", previousRange),
       ]);
 
-    const ctr = calculateCtr(clicks, impressions);
-    const prevCtr = calculateCtr(prevClicks, prevImpressions);
+    const ctr = calculatePercentage(clicks, impressions);
+    const prevCtr = calculatePercentage(prevClicks, prevImpressions);
 
     elements.push({
       element,
@@ -116,8 +92,11 @@ export const getUiElementStats = async (
 
   elements.sort((a, b) => a.ctr - b.ctr);
 
-  const overallCtr = calculateCtr(totalClicks, totalImpressions);
-  const prevOverallCtr = calculateCtr(prevTotalClicks, prevTotalImpressions);
+  const overallCtr = calculatePercentage(totalClicks, totalImpressions);
+  const prevOverallCtr = calculatePercentage(
+    prevTotalClicks,
+    prevTotalImpressions,
+  );
 
   return {
     totalImpressions,

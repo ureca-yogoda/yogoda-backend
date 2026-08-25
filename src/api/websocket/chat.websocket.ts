@@ -1,6 +1,7 @@
 import { Server, Socket } from "socket.io";
 
 import { env } from "../../core/config/env.js";
+import { FUNNEL_STAGES } from "../../constants/funnel-stage.js";
 import { verifyToken } from "../../core/security/jwt.js";
 import type { ChatSessionFunnelStage } from "../../models/chat-session.model.js";
 import type {
@@ -43,14 +44,6 @@ interface ConversionEventPayload {
   sessionId?: string;
   event?: string;
 }
-
-const FUNNEL_STAGES: ChatSessionFunnelStage[] = [
-  "consultation_started",
-  "recommendation_completed",
-  "plan_comparison_viewed",
-  "signup_started",
-  "signup_completed",
-];
 
 function isFunnelStage(value: unknown): value is ChatSessionFunnelStage {
   return (

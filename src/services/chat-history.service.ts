@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 
+import { FUNNEL_STAGE_ORDER } from "../constants/funnel-stage.js";
 import {
   ChatMessageModel,
   type ChatMessageRole,
@@ -11,15 +12,6 @@ import {
 } from "../models/chat-session.model.js";
 import { getActivePromptVersion } from "./prompt.service.js";
 import type { SurveyAnswers } from "../types/chat.js";
-
-// 퍼널 단계의 진행 순서. last_stage가 뒤로 후퇴하지 않도록 순서를 비교하는 데 씀
-const FUNNEL_STAGE_ORDER: Record<ChatSessionFunnelStage, number> = {
-  consultation_started: 1,
-  recommendation_completed: 2,
-  plan_comparison_viewed: 3,
-  signup_started: 4,
-  signup_completed: 5,
-};
 
 /**
  * 회원의 가장 최근 AI 채팅 세션을 조회합니다. (채팅 내역 불러오기용)

@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 
+import { FUNNEL_STAGE_LABELS } from "../constants/funnel-stage.js";
 import { ChatMessageModel } from "../models/chat-message.model.js";
 import {
   ChatSessionModel,
@@ -14,14 +15,6 @@ import type {
 } from "../schemas/session.schema.js";
 import { AppError } from "../utils/AppError.js";
 
-const FUNNEL_STAGE_LABELS: Record<ChatSessionFunnelStage, string> = {
-  consultation_started: "상담 시작 단계",
-  recommendation_completed: "추천 완료 단계",
-  plan_comparison_viewed: "요금제 비교 단계",
-  signup_started: "가입 신청 단계",
-  signup_completed: "가입 완료 단계",
-};
-
 function getDropInfo(session: {
   status: "completed" | "dropped" | null;
   last_stage: ChatSessionFunnelStage | null;
@@ -30,9 +23,10 @@ function getDropInfo(session: {
 
   return {
     dropStage: isDropped ? session.last_stage : null,
+    // 대시보드용 라벨("상담 시작")과 달리 세션 로그 화면에서는 "~ 단계"로 표시함
     dropStageLabel:
       isDropped && session.last_stage
-        ? FUNNEL_STAGE_LABELS[session.last_stage]
+        ? `${FUNNEL_STAGE_LABELS[session.last_stage]} 단계`
         : null,
   };
 }
