@@ -3,6 +3,7 @@ import { Router } from "express";
 import {
   listNotifications,
   readNotification,
+  deleteNotification,
 } from "../controllers/notification.controller.js";
 import { authMiddleware } from "../../core/middlewares/auth.middleware.js";
 
@@ -87,5 +88,29 @@ router.get("/", authMiddleware, listNotifications);
  *         description: 인증 실패
  */
 router.patch("/:notificationId/read", authMiddleware, readNotification);
+
+/**
+ * @openapi
+ * /api/notifications/{notificationId}:
+ *   delete:
+ *     summary: 알림 삭제
+ *     tags: [Notifications]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: notificationId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: 삭제 완료
+ *       400:
+ *         description: notificationId가 올바르지 않음
+ *       401:
+ *         description: 인증 실패
+ */
+router.delete("/:notificationId", authMiddleware, deleteNotification);
 
 export default router;

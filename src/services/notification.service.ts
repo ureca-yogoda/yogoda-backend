@@ -227,3 +227,13 @@ export async function markNotificationAsRead(
     { $set: { read_at: new Date() } },
   );
 }
+
+/**
+ * 알림 하나를 삭제합니다. 다른 유저의 알림은 건드리지 않도록 user_id도 함께 조건에 넣습니다.
+ */
+export async function removeNotification(
+  userId: string,
+  notificationId: string,
+) {
+  await NotificationModel.deleteOne({ _id: notificationId, user_id: userId });
+}
