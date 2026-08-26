@@ -4,6 +4,7 @@ import {
   getNotifications,
   getUnreadNotificationCount,
   markNotificationAsRead,
+  removeNotification,
 } from "../../services/notification.service.js";
 
 /**
@@ -47,6 +48,31 @@ export async function readNotification(
     await markNotificationAsRead(userId, notificationId);
 
     res.status(200).json({ message: "알림을 읽음 처리했어요." });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * 알림 하나를 삭제합니다.
+ */
+export async function deleteNotification(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const userId = req.user!.userId;
+    const { notificationId } = req.params;
+
+    if (typeof notificationId !== "string" || notificationId.trim() === "") {
+      res.status(400).json({ message: "notificationId가 올바르지 않아요." });
+      return;
+    }
+
+    await removeNotification(userId, notificationId);
+
+    res.status(200).json({ message: "알림을 삭제했어요." });
   } catch (error) {
     next(error);
   }
