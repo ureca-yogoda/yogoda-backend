@@ -61,8 +61,7 @@ const UI_EVENT_ELEMENTS: UiEventElement[] = [
   "plan_detail",
   "plan_comparison",
   "signup_button",
-  "benefit_detail",
-  "agent_connect",
+  "explore_plans",
 ];
 
 const UI_EVENT_ACTIONS: UiEventAction[] = ["view", "click"];

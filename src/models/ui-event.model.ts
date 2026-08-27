@@ -1,11 +1,7 @@
 import { Schema, model, Types } from "mongoose";
 
 export type UiEventElement =
-  | "plan_detail"
-  | "plan_comparison"
-  | "signup_button"
-  | "benefit_detail"
-  | "agent_connect";
+  "plan_detail" | "plan_comparison" | "signup_button" | "explore_plans";
 
 export type UiEventAction = "view" | "click";
 
@@ -27,8 +23,7 @@ const uiEventSchema = new Schema<IUiEvent>(
         "plan_detail",
         "plan_comparison",
         "signup_button",
-        "benefit_detail",
-        "agent_connect",
+        "explore_plans",
       ],
     },
     action: { type: String, required: true, enum: ["view", "click"] },
