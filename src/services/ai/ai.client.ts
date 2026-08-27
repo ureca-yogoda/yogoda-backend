@@ -7,6 +7,7 @@ import type {
   SurveyAnswers,
   SurveyContext,
 } from "../../types/chat.js";
+import type { IPlan } from "../../models/plan.model.js";
 
 const COLLECTED_INFO_SCHEMA = {
   type: "object",
@@ -169,6 +170,156 @@ export async function getChatDecision({
     return { decision, interactionId };
   } catch {
     console.error("AI 응답 JSON 파싱 실패:", rawText);
+    throw new Error("AI_RESPONSE_INVALID");
+  }
+}
+
+// ─── 요금제 비교 ───────────────────────────────────────────────────────────────
+
+export interface PlanComparisonRow {
+  label: string;
+  current: string;
+  selected: string;
+  winner: "current" | "selected" | "tie" | "none";
+}
+
+export interface PlanComparisonResult {
+  rows: PlanComparisonRow[];
+  oneLineSummary: string;
+  recommendation: "current" | "selected" | "tie";
+  summaryReason: string;
+}
+
+const PLAN_COMPARISON_SCHEMA = {
+  type: "object",
+  properties: {
+    rows: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          label: { type: "string" },
+          current: { type: "string" },
+          selected: { type: "string" },
+          winner: {
+            type: "string",
+            enum: ["current", "selected", "tie", "none"],
+          },
+        },
+        required: ["label", "current", "selected", "winner"],
+      },
+    },
+    oneLineSummary: { type: "string" },
+    recommendation: { type: "string", enum: ["current", "selected", "tie"] },
+    summaryReason: { type: "string" },
+  },
+  required: ["rows", "oneLineSummary", "recommendation", "summaryReason"],
+};
+
+function serializePlan(plan: IPlan): string {
+  const fee = (plan.discountFee ?? plan.monthlyFee).toLocaleString("ko-KR");
+
+  const benefits = plan.benefitDetails
+    .map((b) => {
+      const val = b.monthlyValue
+        ? ` (월 ${b.monthlyValue.toLocaleString("ko-KR")}원 상당)`
+        : "";
+      const desc = b.description ? `: ${b.description}` : "";
+      return `  - [${b.category}] ${b.title}${desc}${val}`;
+    })
+    .join("\n");
+
+  const choices = plan.choiceBenefits
+    .filter((c) => c.stepType === "choice")
+    .map((c) => {
+      const opts = c.options.map((o) => o.title).join(", ");
+      return `  - ${c.title} → 선택 가능: ${opts}`;
+    })
+    .join("\n");
+
+  const perks = plan.perks.length > 0 ? plan.perks.join(", ") : "없음";
+
+  return [
+    `요금제명: ${plan.name}`,
+    `월 요금: ${fee}원`,
+    `네트워크: ${plan.network}`,
+    `데이터: ${plan.data.display}${plan.data.amountMb === null ? " (무제한)" : ""}`,
+    `  - 테더링: ${plan.data.sharingDisplay ?? "없음"}`,
+    `  - 가족 데이터: ${plan.data.familyDataDisplay ?? "없음"}`,
+    `통화: ${plan.voice}`,
+    `부가통화: ${plan.additionalVoice ?? "없음"}`,
+    `문자: ${plan.sms}`,
+    `멤버십: ${plan.membershipTier ?? "없음"}`,
+    `기본 혜택:\n${benefits || "  없음"}`,
+    `선택 혜택:\n${choices || "  없음"}`,
+    `부가서비스: ${perks}`,
+  ].join("\n");
+}
+
+export async function comparePlansWithAI(
+  currentPlan: IPlan,
+  selectedPlan: IPlan,
+): Promise<PlanComparisonResult> {
+  const systemInstruction = `당신은 통신 요금제 비교 전문가입니다. 두 요금제를 항목별로 꼼꼼히 비교해서 사용자가 어느 쪽이 더 유리한지 판단할 수 있도록 도와주세요.
+
+[현재 요금제]
+${serializePlan(currentPlan)}
+
+[비교 요금제]
+${serializePlan(selectedPlan)}
+
+규칙:
+- rows에는 월 요금, 네트워크, 데이터, 통화, 부가통화, 문자, 테더링, 가족데이터, 멤버십을 반드시 포함하고, 혜택/부가서비스도 의미있는 차이가 있으면 각각 행으로 추가하세요.
+- winner: 해당 항목에서 더 유리한 쪽("current"|"selected"|"tie"|"none"). "none"은 비교 자체가 불가능한 경우에만.
+- current/selected는 사람이 읽기 좋은 값 그대로.
+- oneLineSummary: 전체를 15자 이내로 요약.
+- summaryReason: 최종 추천 이유를 2~3문장으로 설명. 반말 금지, 존댓말로.`;
+
+  let response;
+  try {
+    response = await axios({
+      method: "post",
+      url: "https://generativelanguage.googleapis.com/v1beta/interactions",
+      headers: { "x-goog-api-key": env.AI_API_KEY },
+      data: {
+        model: env.AI_MODEL,
+        input: "두 요금제를 비교해주세요.",
+        system_instruction: systemInstruction,
+        response_format: {
+          type: "text",
+          mime_type: "application/json",
+          schema: PLAN_COMPARISON_SCHEMA,
+        },
+      },
+    });
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response) {
+      console.error(
+        `AI 요금제 비교 에러 (status ${err.response.status}):`,
+        JSON.stringify(err.response.data),
+      );
+    } else {
+      console.error("AI 요금제 비교 에러:", err);
+    }
+    throw new Error("AI_REQUEST_FAILED");
+  }
+
+  const steps: InteractionStep[] = response.data?.steps ?? [];
+  const modelOutputStep = steps.find((step) => step.type === "model_output");
+  const rawText = modelOutputStep?.content?.[0]?.text;
+
+  if (typeof rawText !== "string") {
+    console.error(
+      "AI 비교 응답 형식이 예상과 다릅니다:",
+      JSON.stringify(response.data),
+    );
+    throw new Error("AI_RESPONSE_INVALID");
+  }
+
+  try {
+    return JSON.parse(rawText) as PlanComparisonResult;
+  } catch {
+    console.error("AI 비교 응답 JSON 파싱 실패:", rawText);
     throw new Error("AI_RESPONSE_INVALID");
   }
 }
