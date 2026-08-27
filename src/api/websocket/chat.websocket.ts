@@ -190,6 +190,8 @@ export function setupChatSocket(io: Server) {
           collectedInfo,
           plans: candidates,
           promptContent,
+          // AI 프롬프트에도 현재 요금제를 명시해 후보 필터링에서 놓친 경우까지 방지함
+          currentPlanCode: currentPlan?.planCode ?? null,
         });
 
         // 요금제를 추천하는 응답이면, 텍스트 메시지를 저장할 때 카드도 함께 저장해서
