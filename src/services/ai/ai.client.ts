@@ -56,6 +56,8 @@ interface GetChatDecisionParams {
   plans: PlanCandidate[];
   // 세션에 고정된 프롬프트 버전의 내용. 관리자가 관리하는 페르소나/대화 규칙 부분만 담고 있음
   promptContent: string;
+  // 로그인 사용자의 현재 가입 요금제 code. AI 프롬프트에 명시해 환각으로 인한 중복 추천을 방지함
+  currentPlanCode?: string | null;
 }
 
 interface ChatDecisionResult {
@@ -82,6 +84,7 @@ export async function getChatDecision({
   collectedInfo,
   plans,
   promptContent,
+  currentPlanCode,
 }: GetChatDecisionParams): Promise<ChatDecisionResult> {
   // previous_interaction_id가 없으면 이 사용자와의 첫 메시지라는 뜻 — 모델이 스스로
   // "첫 대화인지"를 판단하다가 인사말을 반복하는 문제가 있어서, 우리가 직접 계산해 알려줌
@@ -92,6 +95,7 @@ export async function getChatDecision({
     collectedInfo,
     plans,
     isFirstTurn,
+    currentPlanCode,
   );
 
   // 대화가 새로 시작되는지 이어지는지, collectedInfo가 잘 이어지는지 확인용

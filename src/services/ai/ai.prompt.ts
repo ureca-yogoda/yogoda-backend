@@ -25,6 +25,7 @@ export const DEFAULT_PROMPT_CONTENT = `
 - 사용자가 사전에 진행한 설문 결과와, 지금까지 나눈 대화 내용, 그리고 아래 [이미 파악된 정보]를 모두 참고해서 요금제를 추천합니다.
 - 아래 [이미 파악된 정보]에 값이 있는 항목은 이미 답을 얻은 것이니 절대 다시 묻지 마세요.
 - 요금제 추천에 필요한 정보(월 데이터 사용량, 선호 콘텐츠(OTT 등), 선호 혜택, 우선순위)가 충분히 파악됐다고 판단되면 [요금제 목록]에서 최대 3개를 골라 추천하세요.
+- 아래 [현재 가입 요금제]에 표시된 요금제는 추천 목록에서 반드시 제외하세요. 사용자가 이미 이용 중인 요금제를 다시 추천하는 것은 의미가 없습니다.
 - 정보가 부족하면 [이미 파악된 정보]에 없는 항목만 골라 한 번에 하나씩, 짧고 구체적인 질문으로 되물어 대화를 이어가세요.
 - 같은 질문을 문구만 바꿔서 반복하지 마세요. 한 항목당 질문은 최대 한 번만 하고, 답을 얻었으면(아래 [애매한 답변 처리 규칙] 포함) 바로 다음 항목으로 넘어가세요.
 
@@ -78,9 +79,14 @@ export function buildSystemPrompt(
   collectedInfo: SurveyAnswers | undefined,
   plans: PlanCandidate[],
   isFirstTurn: boolean,
+  currentPlanCode?: string | null,
 ): string {
+  /*
+   * 화면 첫 번째 말풍선에 이미 인사 문구가 고정 표시되므로,
+   * 첫 턴이든 아니든 AI는 인사말 없이 바로 질문으로 시작해야 함
+   */
   const turnBlock = isFirstTurn
-    ? '[대화 시작]\n- 지금이 이 사용자와의 첫 메시지입니다. "반갑습니다" 등으로 짧게 한 번만 인사한 뒤 바로 첫 질문으로 이어가세요.'
+    ? '[대화 시작]\n- 지금이 이 사용자와의 첫 메시지입니다. 화면에 인사 메시지가 이미 표시되어 있으므로 "반갑습니다", "안녕하세요" 같은 인사말은 절대 쓰지 마세요. 인사 없이 바로 첫 질문으로 시작하세요.'
     : '[대화 시작]\n- 지금은 첫 메시지가 아니라 이미 진행 중인 대화의 다음 턴입니다. "반갑습니다", "안녕하세요" 같은 인사말을 다시 사용하지 마세요. 인사 없이 바로 이어서 답하거나 다음 질문으로 넘어가세요.';
 
   const responseFormatBlock = `[응답 형식]
@@ -95,6 +101,14 @@ export function buildSystemPrompt(
   const analysisBlock = formatPersonaAnalysis(surveyContext);
   const planBlock = formatPlanCatalog(plans);
 
+  /*
+   * 현재 가입 요금제 블록: 후보 목록에서 이미 걸렀더라도 AI가 환각으로 추천하는 경우를
+   * 방지하기 위해 프롬프트에도 명시적으로 제외 지시를 넣음
+   */
+  const currentPlanBlock = currentPlanCode
+    ? `[현재 가입 요금제 - 추천 금지]\n- planCode: ${currentPlanCode}\n(이 요금제는 이미 이용 중이므로 recommendations 배열에 절대 포함하지 마세요)`
+    : `[현재 가입 요금제]\n없음 (미가입 또는 비회원)`;
+
   return `
 ${basePrompt}
 
@@ -103,6 +117,8 @@ ${turnBlock}
 ${responseFormatBlock}
 
 ${knownInfoBlock}
+
+${currentPlanBlock}
 
 ${analysisBlock}
 
