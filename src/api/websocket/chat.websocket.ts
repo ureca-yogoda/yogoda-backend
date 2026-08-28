@@ -8,7 +8,10 @@ import type {
   UiEventAction,
   UiEventElement,
 } from "../../models/ui-event.model.js";
-import { getChatDecision } from "../../services/ai/ai.client.js";
+import {
+  getChatDecision,
+  getSignupDecision,
+} from "../../services/ai/ai.client.js";
 import {
   finalizeSessionStatus,
   recordConversionEvent,
@@ -16,15 +19,24 @@ import {
   saveMessage,
   updateCollectedInfo,
   updateLastInteractionId,
+  updateSignupCollectedData,
 } from "../../services/chat-history.service.js";
-import { getCurrentPlan } from "../../services/plan.service.js";
+import {
+  getCurrentPlan,
+  getPlanByCode,
+  subscribeUserToPlan,
+} from "../../services/plan.service.js";
 import { getPromptContentByVersion } from "../../services/prompt.service.js";
 import {
   buildPlanCards,
   getPlanCandidates,
 } from "../../services/plan-recommendation.service.js";
 import { recordUiEvent } from "../../services/ui-event.service.js";
-import type { SurveyAnswers, SurveyContext } from "../../types/chat.js";
+import type {
+  SurveyAnswers,
+  SurveyContext,
+  SignupCollectedData,
+} from "../../types/chat.js";
 
 const TYPE_CHUNK_SIZE = 8;
 const TYPE_CHUNK_DELAY_MS = 30;
@@ -33,6 +45,10 @@ interface ChatMessagePayload {
   message?: string;
   simulateError?: boolean;
   surveyContext?: SurveyContext;
+  // 가입 플로우 전용
+  preselectedPlanCode?: string;
+  isKickoff?: boolean;
+  signupCollectedData?: SignupCollectedData;
 }
 
 interface ChatSocketAuth {
@@ -78,7 +94,6 @@ function isUiEventAction(value: unknown): value is UiEventAction {
   );
 }
 
-// AI 응답을 실제로 스트리밍 받지 않아도, 조각내서 순차 전송해 타자기 효과가 자연스럽게 이어지도록 함
 async function sendTypedText(socket: Socket, text: string) {
   for (let i = 0; i < text.length; i += TYPE_CHUNK_SIZE) {
     socket.emit("chunk", text.slice(i, i + TYPE_CHUNK_SIZE));
@@ -86,13 +101,8 @@ async function sendTypedText(socket: Socket, text: string) {
   }
 }
 
-/**
- * 소켓 연결에 실려온 토큰을 검증해 로그인한 유저 id를 반환합니다.
- * 토큰이 없거나 유효하지 않으면 null을 반환해 비회원으로 처리합니다.
- */
 function resolveConnectionUserId(token: string | undefined): string | null {
   if (!token) return null;
-
   try {
     const payload = verifyToken(token);
     return (payload.userId as string | undefined) ?? null;
@@ -102,9 +112,6 @@ function resolveConnectionUserId(token: string | undefined): string | null {
   }
 }
 
-/**
- * AI 채팅 소켓 네임스페이스를 셋업합니다.
- */
 export function setupChatSocket(io: Server) {
   const chatNamespace = io.of("/chat");
 
@@ -117,24 +124,19 @@ export function setupChatSocket(io: Server) {
     let currentSessionId: string;
     let promptContent: string;
     let collectedInfo: SurveyAnswers | undefined;
+    let signupCollectedData: Record<string, unknown> | undefined;
     let previousInteractionId: string | undefined;
 
-    /*
-     * connection 핸들러 자체를 async로 만들면 이 구간이 끝나기 전까지
-     * 아래 socket.on("message", ...) 리스너가 등록되지 않아, 그 사이에 클라이언트가
-     * 보낸 이벤트를 통째로 놓칠 수 있음. 그래서 리스너는 동기적으로 먼저 등록해두고,
-     * 각 핸들러 안에서 이 Promise를 await해서 세션이 준비될 때까지만 대기함
-     */
     const sessionReady = (async () => {
       const { session } = await resolveChatSession(userId, sessionId);
 
       currentSessionId = session._id.toString();
       promptContent = await getPromptContentByVersion(session.prompt_version);
-      console.log(
-        `📝 세션 ${currentSessionId} 프롬프트 버전: ${session.prompt_version ?? "(없음, 기본값 사용)"}`,
-      );
       collectedInfo =
         (session.collected_info as SurveyAnswers | null) ?? undefined;
+      signupCollectedData =
+        (session.signup_collected_data as Record<string, unknown> | null) ??
+        undefined;
       previousInteractionId = session.last_interaction_id ?? undefined;
 
       socket.emit("session_created", {
@@ -144,28 +146,32 @@ export function setupChatSocket(io: Server) {
     })();
 
     socket.on("message", async (payload: ChatMessagePayload) => {
-      const { message, simulateError, surveyContext } = payload;
+      const {
+        message,
+        simulateError,
+        surveyContext,
+        preselectedPlanCode,
+        isKickoff = false,
+        signupCollectedData: clientSignupData,
+      } = payload;
 
       if (!message || message.trim() === "") {
         socket.emit("error", "메시지가 유효하지 않습니다.");
         return;
       }
 
-      // 1. 강제 에러 시뮬레이션
       if (simulateError) {
         socket.emit("error", "시뮬레이션 에러가 발생했습니다.");
         socket.disconnect();
         return;
       }
 
-      // 2. AI API 키 검증
       if (!env.AI_API_KEY) {
         socket.emit("error", "AI API 키가 등록되지 않았습니다.");
         socket.disconnect();
         return;
       }
 
-      // 3. AI 모델명 검증
       if (!env.AI_MODEL) {
         socket.emit("error", "AI 모델이 설정되지 않았습니다.");
         socket.disconnect();
@@ -175,10 +181,148 @@ export function setupChatSocket(io: Server) {
       try {
         await sessionReady;
 
-        await saveMessage(currentSessionId, "user", message);
+        // 킥오프 메시지는 DB에 사용자 메시지로 저장하지 않음
+        if (!isKickoff) {
+          await saveMessage(currentSessionId, "user", message);
+        }
 
-        // 로그인 사용자가 이미 이용 중인 요금제가 있다면, AI가 같은 요금제를
-        // 다시 추천하지 않도록 후보 목록에서 미리 제외함
+        // ── 가입 플로우 분기 ──────────────────────────────────────────────────
+        if (preselectedPlanCode) {
+          // 클라이언트가 보내온 최신 signupData를 우선 사용
+          const currentSignupData = clientSignupData
+            ? (clientSignupData as unknown as Record<string, unknown>)
+            : signupCollectedData;
+
+          const plan = (await getPlanByCode(
+            preselectedPlanCode,
+          )) as unknown as Record<string, unknown> & {
+            code: string;
+            name: string;
+            discountFee?: number;
+            monthlyFee: number;
+            choiceBenefits: {
+              code: string;
+              title: string;
+              selectionCount: number;
+              required: boolean;
+              options: {
+                code: string;
+                title: string;
+                description: string | null;
+              }[];
+            }[];
+          };
+          if (!plan) {
+            socket.emit("error", "요금제를 찾을 수 없습니다.");
+            return;
+          }
+
+          const { decision, interactionId } = await getSignupDecision({
+            message,
+            previousInteractionId,
+            promptContent,
+            preselectedPlan: {
+              code: plan.code,
+              name: plan.name,
+              monthlyFee: plan.discountFee ?? plan.monthlyFee,
+            },
+            signupCollectedData: currentSignupData,
+            choiceBenefits: (plan.choiceBenefits ?? [])
+              .filter((b) => b.options.length > 0)
+              .map((b) => ({
+                code: b.code,
+                title: b.title,
+                selectionCount: b.selectionCount,
+                required: b.required,
+                options: (b.options ?? []).map((o) => ({
+                  code: o.code,
+                  title: o.title,
+                  description: o.description ?? null,
+                })),
+              })),
+          });
+
+          await saveMessage(currentSessionId, "ai", decision.message);
+
+          // signupData 세션에 누적 저장
+          if (decision.signupData) {
+            const updated = {
+              ...(currentSignupData ?? {}),
+              ...(decision.signupData as unknown as Record<string, unknown>),
+            };
+            await updateSignupCollectedData(currentSessionId, updated);
+            signupCollectedData = updated;
+          }
+
+          await updateLastInteractionId(currentSessionId, interactionId);
+          previousInteractionId = interactionId;
+
+          // 가입 단계 퍼널 기록
+          await recordConversionEvent(currentSessionId, "signup_started");
+
+          // 프론트에 현재 signup 단계 알림
+          socket.emit("signup", {
+            signupStep: decision.signupStep,
+            signupData: decision.signupData,
+          });
+
+          await sendTypedText(socket, decision.message);
+
+          if (decision.quickReplies?.length) {
+            socket.emit("quickReplies", decision.quickReplies);
+          }
+
+          // 가입 완료 처리
+          if (decision.signupStep === "completed" && userId) {
+            const sd = signupCollectedData as SignupCollectedData | undefined;
+            const selectedBenefits =
+              (sd?.selectedBenefits as Record<string, string[]> | undefined) ??
+              {};
+            const signupType = sd?.signupType ?? "신규가입";
+            const paymentMethod = sd?.paymentMethod ?? "신용카드";
+
+            console.log("[가입 DB] 시도:", {
+              userId,
+              planCode: preselectedPlanCode,
+              selectedBenefits,
+              signupType,
+              paymentMethod,
+            });
+
+            try {
+              await subscribeUserToPlan({
+                userId,
+                planCode: preselectedPlanCode,
+                selectedOptions: selectedBenefits,
+                signupType,
+                paymentMethod,
+              });
+
+              await recordConversionEvent(currentSessionId, "signup_completed");
+
+              socket.emit("signup_complete", {
+                planCode: preselectedPlanCode,
+                planName: plan.name,
+                monthlyFee: plan.discountFee ?? plan.monthlyFee,
+                signupType,
+                paymentMethod,
+              });
+
+              console.log(
+                `✅ 가입 완료: userId=${userId}, plan=${preselectedPlanCode}`,
+              );
+            } catch (err) {
+              const errMsg = err instanceof Error ? err.message : String(err);
+              console.error("가입 DB 처리 에러:", errMsg, err);
+              socket.emit("error", "가입 처리 중 오류가 발생했습니다.");
+            }
+          }
+
+          socket.emit("done");
+          return;
+        }
+
+        // ── 기존 추천 플로우 ────────────────────────────────────────────────────
         const currentPlan = userId ? await getCurrentPlan(userId) : null;
         const candidates = await getPlanCandidates(currentPlan?.planCode);
 
@@ -189,12 +333,9 @@ export function setupChatSocket(io: Server) {
           collectedInfo,
           plans: candidates,
           promptContent,
-          // AI 프롬프트에도 현재 요금제를 명시해 후보 필터링에서 놓친 경우까지 방지함
           currentPlanCode: currentPlan?.planCode ?? null,
         });
 
-        // 요금제를 추천하는 응답이면, 텍스트 메시지를 저장할 때 카드도 함께 저장해서
-        // 재접속 시 getSessionMessages()로 그대로 복원되게 함
         let cards: ReturnType<typeof buildPlanCards> = [];
         if (
           decision.action === "recommend" &&
@@ -229,7 +370,6 @@ export function setupChatSocket(io: Server) {
           socket.emit("plans", cards);
         }
 
-        // 질문(action: ask)에만 빠른 답변 후보를 보여줌 — 추천 결과에는 의미가 없음
         if (decision.action === "ask" && decision.quickReplies?.length) {
           socket.emit("quickReplies", decision.quickReplies);
         }
@@ -243,7 +383,6 @@ export function setupChatSocket(io: Server) {
 
     socket.on("conversion_event", async (payload: ConversionEventPayload) => {
       if (!isFunnelStage(payload.event)) return;
-
       try {
         await sessionReady;
         await recordConversionEvent(currentSessionId, payload.event);
@@ -259,7 +398,6 @@ export function setupChatSocket(io: Server) {
       ) {
         return;
       }
-
       try {
         await sessionReady;
         await recordUiEvent(currentSessionId, payload.element, payload.action);
@@ -270,7 +408,6 @@ export function setupChatSocket(io: Server) {
 
     socket.on("disconnect", async () => {
       console.log("🔌 소켓 연결 종료");
-
       try {
         await sessionReady;
         await finalizeSessionStatus(currentSessionId);
