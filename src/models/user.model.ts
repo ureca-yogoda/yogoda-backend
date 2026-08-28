@@ -3,6 +3,9 @@ import { Schema, model, Types } from "mongoose";
 export type Provider = "kakao" | "google" | "naver";
 export type Theme = "light" | "dark";
 export type UserRole = "user" | "admin";
+export type SignupType = "신규가입" | "번호이동";
+export type PaymentMethod =
+  "계좌이체" | "신용카드" | "카카오페이" | "네이버페이" | "토스";
 
 export interface IUser {
   _id: Types.ObjectId;
@@ -16,6 +19,9 @@ export interface IUser {
   plan_joined_at: Date | null;
 
   previous_monthly_fee: number | null;
+
+  signup_type: SignupType | null;
+  payment_method: PaymentMethod | null;
 
   user_patterns: Record<string, unknown> | null;
   role: UserRole;
@@ -53,6 +59,18 @@ const userSchema = new Schema<IUser>(
 
     previous_monthly_fee: {
       type: Number,
+      default: null,
+    },
+
+    signup_type: {
+      type: String,
+      enum: ["신규가입", "번호이동"],
+      default: null,
+    },
+
+    payment_method: {
+      type: String,
+      enum: ["계좌이체", "신용카드", "카카오페이", "네이버페이", "토스"],
       default: null,
     },
 

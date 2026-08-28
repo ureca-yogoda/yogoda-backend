@@ -1,6 +1,10 @@
 import axios from "axios";
 import { env } from "../../core/config/env.js";
-import { buildSystemPrompt } from "./ai.prompt.js";
+import {
+  buildSystemPrompt,
+  buildSignupSystemPrompt,
+  formatChoiceBenefitsForSignup,
+} from "./ai.prompt.js";
 import type {
   ChatDecision,
   PlanCandidate,
@@ -320,6 +324,150 @@ ${serializePlan(selectedPlan)}
     return JSON.parse(rawText) as PlanComparisonResult;
   } catch {
     console.error("AI 비교 응답 JSON 파싱 실패:", rawText);
+    throw new Error("AI_RESPONSE_INVALID");
+  }
+}
+
+// ─── 가입 플로우 AI 결정 ────────────────────────────────────────────────────────
+
+const SIGNUP_DATA_SCHEMA = {
+  type: "object",
+  properties: {
+    signupType: { type: "string", enum: ["신규가입", "번호이동"] },
+    fraudWarningAcknowledged: { type: "boolean" },
+    agreedToTerms: { type: "boolean" },
+    name: { type: "string" },
+    birth: { type: "string" },
+    selectedBenefits: { type: "object" },
+    paymentMethod: {
+      type: "string",
+      enum: ["계좌이체", "신용카드", "카카오페이", "네이버페이", "토스"],
+    },
+  },
+};
+
+const SIGNUP_RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {
+    action: { type: "string", enum: ["signup"] },
+    signupStep: {
+      type: "string",
+      enum: [
+        "confirm_plan",
+        "fraud_warning",
+        "terms_agreement",
+        "collect_info",
+        "select_benefits",
+        "select_payment",
+        "final_confirm",
+        "completed",
+      ],
+    },
+    message: { type: "string" },
+    signupData: SIGNUP_DATA_SCHEMA,
+    quickReplies: { type: "array", items: { type: "string" } },
+  },
+  required: ["action", "signupStep", "message", "signupData"],
+};
+
+interface GetSignupDecisionParams {
+  message: string;
+  previousInteractionId?: string;
+  promptContent: string;
+  preselectedPlan: { code: string; name: string; monthlyFee: number };
+  signupCollectedData?: Record<string, unknown>;
+  choiceBenefits?: Array<{
+    code: string;
+    title: string;
+    selectionCount: number;
+    required: boolean;
+    options: Array<{ code: string; title: string; description: string | null }>;
+  }>;
+}
+
+/**
+ * 가입 플로우 전용 AI 결정 함수.
+ * 추천 플로우의 getChatDecision과 별도로 분리해 프롬프트·스키마가 섞이지 않게 합니다.
+ */
+export async function getSignupDecision({
+  message,
+  previousInteractionId,
+  promptContent,
+  preselectedPlan,
+  signupCollectedData,
+  choiceBenefits = [],
+}: GetSignupDecisionParams): Promise<ChatDecisionResult> {
+  const choiceBenefitsBlock = formatChoiceBenefitsForSignup(choiceBenefits);
+  const systemInstruction = buildSignupSystemPrompt(
+    promptContent,
+    preselectedPlan,
+    signupCollectedData,
+    choiceBenefitsBlock,
+  );
+
+  console.log(
+    `[가입 AI] previous_interaction_id=${previousInteractionId ?? "(없음)"}, step=${signupCollectedData?.signupStep ?? "시작"}`,
+  );
+
+  let response;
+  try {
+    response = await axios({
+      method: "post",
+      url: "https://generativelanguage.googleapis.com/v1beta/interactions",
+      headers: { "x-goog-api-key": env.AI_API_KEY },
+      data: {
+        model: env.AI_MODEL,
+        input: message,
+        ...(previousInteractionId
+          ? { previous_interaction_id: previousInteractionId }
+          : {}),
+        system_instruction: systemInstruction,
+        response_format: {
+          type: "text",
+          mime_type: "application/json",
+          schema: SIGNUP_RESPONSE_SCHEMA,
+        },
+      },
+    });
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response) {
+      console.error(
+        `[가입 AI] 에러 (status ${err.response.status}):`,
+        JSON.stringify(err.response.data),
+      );
+      if (previousInteractionId && err.response.status === 404) {
+        console.warn(
+          "[가입 AI] previous_interaction_id 만료, 새 대화로 재시도",
+        );
+        return getSignupDecision({
+          message,
+          promptContent,
+          preselectedPlan,
+          signupCollectedData,
+          choiceBenefits,
+        });
+      }
+    } else {
+      console.error("[가입 AI] 에러:", err);
+    }
+    throw new Error("AI_REQUEST_FAILED");
+  }
+
+  const interactionId = response.data?.id;
+  const steps: InteractionStep[] = response.data?.steps ?? [];
+  const modelOutputStep = steps.find((step) => step.type === "model_output");
+  const rawText = modelOutputStep?.content?.[0]?.text;
+
+  if (typeof rawText !== "string" || typeof interactionId !== "string") {
+    console.error("[가입 AI] 응답 형식 오류:", JSON.stringify(response.data));
+    throw new Error("AI_RESPONSE_INVALID");
+  }
+
+  try {
+    const decision = JSON.parse(rawText) as ChatDecision;
+    return { decision, interactionId };
+  } catch {
+    console.error("[가입 AI] JSON 파싱 실패:", rawText);
     throw new Error("AI_RESPONSE_INVALID");
   }
 }
