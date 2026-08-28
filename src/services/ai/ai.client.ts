@@ -11,7 +11,6 @@ import type {
   SurveyAnswers,
   SurveyContext,
 } from "../../types/chat.js";
-import type { IPlan } from "../../models/plan.model.js";
 
 const COLLECTED_INFO_SCHEMA = {
   type: "object",
@@ -220,49 +219,73 @@ const PLAN_COMPARISON_SCHEMA = {
   required: ["rows", "oneLineSummary", "recommendation", "summaryReason"],
 };
 
-function serializePlan(plan: IPlan): string {
-  const fee = (plan.discount_fee ?? plan.monthly_fee).toLocaleString("ko-KR");
+function serializePlan(plan: Record<string, unknown>): string {
+  const discountFee = plan["discountFee"] as number | undefined;
+  const monthlyFee = plan["monthlyFee"] as number;
+  const fee = (discountFee ?? monthlyFee).toLocaleString("ko-KR");
 
-  const benefits = plan.benefit_details
+  const benefitDetails =
+    (plan["benefitDetails"] as {
+      category: string;
+      title: string;
+      description?: string;
+      monthlyValue?: number;
+    }[]) ?? [];
+  const benefits = benefitDetails
     .map((b) => {
-      const val = b.monthly_value
-        ? ` (월 ${b.monthly_value.toLocaleString("ko-KR")}원 상당)`
+      const val = b.monthlyValue
+        ? ` (월 ${b.monthlyValue.toLocaleString("ko-KR")}원 상당)`
         : "";
       const desc = b.description ? `: ${b.description}` : "";
       return `  - [${b.category}] ${b.title}${desc}${val}`;
     })
     .join("\n");
 
-  const choices = plan.choice_benefits
-    .filter((c) => c.step_type === "choice")
+  const choiceBenefits =
+    (plan["choiceBenefits"] as {
+      stepType?: string;
+      title: string;
+      options: { title: string }[];
+    }[]) ?? [];
+  const choices = choiceBenefits
+    .filter((c) => c.stepType === "choice")
     .map((c) => {
       const opts = c.options.map((o) => o.title).join(", ");
       return `  - ${c.title} → 선택 가능: ${opts}`;
     })
     .join("\n");
 
-  const perks = plan.perks.length > 0 ? plan.perks.join(", ") : "없음";
+  const perks = (plan["perks"] as string[] | undefined) ?? [];
+  const perksStr = perks.length > 0 ? perks.join(", ") : "없음";
+
+  const data =
+    (plan["data"] as {
+      display: string;
+      amountMb?: number | null;
+      sharingDisplay?: string;
+      familyDataDisplay?: string;
+    }) ?? {};
 
   return [
-    `요금제명: ${plan.name}`,
+    `요금제명: ${plan["name"] as string}`,
     `월 요금: ${fee}원`,
-    `네트워크: ${plan.network}`,
-    `데이터: ${plan.data.display}${plan.data.amount_mb === null ? " (무제한)" : ""}`,
-    `  - 테더링: ${plan.data.sharing_display ?? "없음"}`,
-    `  - 가족 데이터: ${plan.data.family_data_display ?? "없음"}`,
-    `통화: ${plan.voice}`,
-    `부가통화: ${plan.additional_voice ?? "없음"}`,
-    `문자: ${plan.sms}`,
-    `멤버십: ${plan.membership_tier ?? "없음"}`,
+    `네트워크: ${plan["network"] as string}`,
+    `데이터: ${data.display ?? ""}${data.amountMb === null ? " (무제한)" : ""}`,
+    `  - 테더링: ${data.sharingDisplay ?? "없음"}`,
+    `  - 가족 데이터: ${data.familyDataDisplay ?? "없음"}`,
+    `통화: ${plan["voice"] as string}`,
+    `부가통화: ${(plan["additionalVoice"] as string | undefined) ?? "없음"}`,
+    `문자: ${plan["sms"] as string}`,
+    `멤버십: ${(plan["membershipTier"] as string | undefined) ?? "없음"}`,
     `기본 혜택:\n${benefits || "  없음"}`,
     `선택 혜택:\n${choices || "  없음"}`,
-    `부가서비스: ${perks}`,
+    `부가서비스: ${perksStr}`,
   ].join("\n");
 }
 
 export async function comparePlansWithAI(
-  currentPlan: IPlan,
-  selectedPlan: IPlan,
+  currentPlan: Record<string, unknown>,
+  selectedPlan: Record<string, unknown>,
 ): Promise<PlanComparisonResult> {
   const systemInstruction = `당신은 통신 요금제 비교 전문가입니다. 두 요금제를 항목별로 꼼꼼히 비교해서 사용자가 어느 쪽이 더 유리한지 판단할 수 있도록 도와주세요.
 

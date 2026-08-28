@@ -294,7 +294,10 @@ export const getAIPlanComparisonHandler = async (
       return;
     }
 
-    const result = await comparePlansWithAI(currentPlan, selectedPlan);
+    const result = await comparePlansWithAI(
+      currentPlan as unknown as Record<string, unknown>,
+      selectedPlan as unknown as Record<string, unknown>,
+    );
     res.status(200).json(result);
   } catch (error) {
     next(error);
