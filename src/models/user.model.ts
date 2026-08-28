@@ -2,6 +2,7 @@ import { Schema, model, Types } from "mongoose";
 
 export type Provider = "kakao" | "google" | "naver";
 export type Theme = "light" | "dark";
+export type UserRole = "user" | "admin";
 
 export interface IUser {
   _id: Types.ObjectId;
@@ -17,7 +18,7 @@ export interface IUser {
   previous_monthly_fee: number | null;
 
   user_patterns: Record<string, unknown> | null;
-  role: string;
+  role: UserRole;
   theme: Theme;
   created_at: Date;
   updated_at: Date;
@@ -59,7 +60,12 @@ const userSchema = new Schema<IUser>(
       type: Schema.Types.Mixed,
       default: null,
     },
-    role: { type: String, required: true, default: "user" },
+    role: {
+      type: String,
+      enum: ["user", "admin"],
+      required: true,
+      default: "user",
+    },
     theme: {
       type: String,
       enum: ["light", "dark"],

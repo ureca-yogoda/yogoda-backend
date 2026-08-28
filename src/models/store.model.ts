@@ -10,17 +10,17 @@ export interface IStore {
   district: string;
   address: string;
   phone: string | null;
-  weekdayHours: string;
-  saturdayHours: string | null;
-  sundayHours: string | null;
+  weekday_hours: string;
+  saturday_hours: string | null;
+  sunday_hours: string | null;
   services: StoreService[];
   location: {
     type: "Point";
     coordinates: [number, number];
   };
-  isDirect: boolean;
-  isActive: boolean;
-  sourceUrl: string;
+  is_direct: boolean;
+  is_active: boolean;
+  source_url: string;
 }
 
 const storeSchema = new Schema<IStore>(
@@ -31,9 +31,9 @@ const storeSchema = new Schema<IStore>(
     district: { type: String, required: true, trim: true, index: true },
     address: { type: String, required: true, trim: true },
     phone: { type: String, default: null },
-    weekdayHours: { type: String, required: true },
-    saturdayHours: { type: String, default: null },
-    sundayHours: { type: String, default: null },
+    weekday_hours: { type: String, required: true },
+    saturday_hours: { type: String, default: null },
+    sunday_hours: { type: String, default: null },
     services: {
       type: [String],
       enum: ["mobile", "internet", "payment", "support", "data_transfer"],
@@ -54,9 +54,9 @@ const storeSchema = new Schema<IStore>(
         },
       },
     },
-    isDirect: { type: Boolean, default: true, index: true },
-    isActive: { type: Boolean, default: true, index: true },
-    sourceUrl: { type: String, required: true },
+    is_direct: { type: Boolean, default: true, index: true },
+    is_active: { type: Boolean, default: true, index: true },
+    source_url: { type: String, required: true },
   },
   {
     collection: "stores",
@@ -67,5 +67,6 @@ const storeSchema = new Schema<IStore>(
 
 storeSchema.index({ location: "2dsphere" });
 storeSchema.index({ name: "text", address: "text" });
+storeSchema.index({ region: 1, district: 1, is_direct: 1, is_active: 1 });
 
 export const StoreModel = model<IStore>("Store", storeSchema);

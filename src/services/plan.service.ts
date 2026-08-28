@@ -2,6 +2,7 @@ import type { IPlanChoiceBenefit } from "../models/plan.model.js";
 import { PlanModel } from "../models/plan.model.js";
 import { UserModel } from "../models/user.model.js";
 import { AppError } from "../utils/AppError.js";
+import { toCamelCaseDeep } from "../utils/case.js";
 import {
   revokeAvailableCouponsForUser,
   syncEligibleCouponsForUser,
@@ -10,21 +11,23 @@ import {
 type SelectedPlanOptions = Record<string, string[]>;
 
 export const getPlans = async () => {
-  return PlanModel.find({
-    isActive: true,
+  const plans = await PlanModel.find({
+    is_active: true,
   })
     .sort({
-      sortOrder: 1,
-      monthlyFee: 1,
+      sort_order: 1,
+      monthly_fee: 1,
     })
     .lean();
+  return toCamelCaseDeep(plans);
 };
 
 export const getPlanByCode = async (code: string) => {
-  return PlanModel.findOne({
+  const plan = await PlanModel.findOne({
     code,
-    isActive: true,
+    is_active: true,
   }).lean();
+  return plan ? toCamelCaseDeep(plan) : null;
 };
 
 export interface PlanSavings {
@@ -77,7 +80,7 @@ export const getCurrentPlan = async (userId: string) => {
     return null;
   }
 
-  const newMonthlyFee = plan.discountFee ?? plan.monthlyFee;
+  const newMonthlyFee = plan.discount_fee ?? plan.monthly_fee;
 
   return {
     planCode: plan.code,
@@ -95,18 +98,18 @@ export const getCurrentPlan = async (userId: string) => {
  * all은 모든 옵션, any는 하나 이상의 옵션 선택이 필요함
  */
 function isDependencySatisfied(
-  dependency: IPlanChoiceBenefit["dependsOn"][number],
+  dependency: IPlanChoiceBenefit["depends_on"][number],
   selectedOptions: SelectedPlanOptions,
 ) {
-  const selectedCodes = selectedOptions[dependency.stepCode] ?? [];
+  const selectedCodes = selectedOptions[dependency.step_code] ?? [];
 
   if (dependency.match === "all") {
-    return dependency.optionCodes.every((optionCode) =>
+    return dependency.option_codes.every((optionCode) =>
       selectedCodes.includes(optionCode),
     );
   }
 
-  return dependency.optionCodes.some((optionCode) =>
+  return dependency.option_codes.some((optionCode) =>
     selectedCodes.includes(optionCode),
   );
 }
@@ -118,11 +121,11 @@ function isStepEligible(
   step: IPlanChoiceBenefit,
   selectedOptions: SelectedPlanOptions,
 ) {
-  if (step.dependsOn.length === 0) {
+  if (step.depends_on.length === 0) {
     return true;
   }
 
-  return step.dependsOn.every((dependency) =>
+  return step.depends_on.every((dependency) =>
     isDependencySatisfied(dependency, selectedOptions),
   );
 }
@@ -135,18 +138,18 @@ function validateSelectedOptions(
   steps: IPlanChoiceBenefit[],
   selectedOptions: SelectedPlanOptions,
 ) {
-  const choiceSteps = steps.filter((step) => step.stepType === "choice");
+  const choiceSteps = steps.filter((step) => step.step_type === "choice");
 
   const validStepCodes = new Set(choiceSteps.map((step) => step.code));
 
-  for (const stepCode of Object.keys(selectedOptions)) {
-    if (!validStepCodes.has(stepCode)) {
+  for (const step_code of Object.keys(selectedOptions)) {
+    if (!validStepCodes.has(step_code)) {
       throw new AppError(400, "유효하지 않은 혜택 선택 단계예요.");
     }
   }
 
   const sortedSteps = [...choiceSteps].sort(
-    (a, b) => a.sortOrder - b.sortOrder,
+    (a, b) => a.sort_order - b.sort_order,
   );
 
   for (const step of sortedSteps) {
@@ -177,18 +180,18 @@ function validateSelectedOptions(
       throw new AppError(400, "유효하지 않은 혜택이 선택되어 있어요.");
     }
 
-    if (selectedCodes.length > step.selectionCount) {
+    if (selectedCodes.length > step.selection_count) {
       throw new AppError(400, "선택 가능한 혜택 개수를 초과했어요.");
     }
 
-    if (step.required && selectedCodes.length !== step.selectionCount) {
+    if (step.required && selectedCodes.length !== step.selection_count) {
       throw new AppError(400, "필수 혜택을 모두 선택해 주세요.");
     }
 
     if (
       !step.required &&
       selectedCodes.length > 0 &&
-      selectedCodes.length !== step.selectionCount
+      selectedCodes.length !== step.selection_count
     ) {
       throw new AppError(400, "선택한 혜택의 개수를 확인해 주세요.");
     }
@@ -206,7 +209,7 @@ export const joinPlan = async (
 ) => {
   const plan = await PlanModel.findOne({
     code,
-    isActive: true,
+    is_active: true,
   }).lean();
 
   if (!plan) {
@@ -232,7 +235,7 @@ export const joinPlan = async (
     );
   }
 
-  validateSelectedOptions(plan.choiceBenefits, selectedOptions);
+  validateSelectedOptions(plan.choice_benefits, selectedOptions);
 
   const joinedAt = new Date();
 
@@ -264,7 +267,7 @@ export const joinPlan = async (
     currentPlanId: plan._id.toString(),
     selectedOptions,
     joinedAt,
-    monthlyFee: plan.discountFee ?? plan.monthlyFee,
+    monthlyFee: plan.discount_fee ?? plan.monthly_fee,
     savings: null,
   };
 };
@@ -280,7 +283,7 @@ export const changePlan = async (
 ) => {
   const plan = await PlanModel.findOne({
     code,
-    isActive: true,
+    is_active: true,
   }).lean();
 
   if (!plan) {
@@ -308,14 +311,14 @@ export const changePlan = async (
 
   // 절약 금액 계산을 위해 변경 전 요금제의 실제 청구액을 미리 조회함
   const previousPlan = await PlanModel.findById(currentUser.current_plan_id)
-    .select("monthlyFee discountFee")
+    .select("monthly_fee discount_fee")
     .lean();
 
   const previousMonthlyFee = previousPlan
-    ? (previousPlan.discountFee ?? previousPlan.monthlyFee)
+    ? (previousPlan.discount_fee ?? previousPlan.monthly_fee)
     : null;
 
-  validateSelectedOptions(plan.choiceBenefits, selectedOptions);
+  validateSelectedOptions(plan.choice_benefits, selectedOptions);
 
   const changedAt = new Date();
 
@@ -342,7 +345,7 @@ export const changePlan = async (
   await revokeAvailableCouponsForUser(userId);
   await syncEligibleCouponsForUser(userId);
 
-  const newMonthlyFee = plan.discountFee ?? plan.monthlyFee;
+  const newMonthlyFee = plan.discount_fee ?? plan.monthly_fee;
 
   return {
     planCode: plan.code,

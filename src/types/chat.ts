@@ -32,15 +32,15 @@ export interface PlanCandidate {
   code: string;
   name: string;
   category: string;
-  monthlyFee: number;
-  discountFee: number | null;
+  monthly_fee: number;
+  discount_fee: number | null;
   dataDisplay: string;
   voice: string;
   sms: string;
-  membershipTier: string | null;
+  membership_tier: string | null;
   perks: string[];
   tags: string[];
-  recommendationTags: string[];
+  recommendation_tags: string[];
 }
 
 export interface ChatRecommendation {

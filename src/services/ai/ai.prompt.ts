@@ -163,9 +163,9 @@ function formatPlanCatalog(plans: PlanCandidate[]): string {
   }
 
   const lines = plans.map((p) => {
-    const fee = p.discountFee ?? p.monthlyFee;
+    const fee = p.discount_fee ?? p.monthly_fee;
     const extras = [
-      p.membershipTier ? `멤버십: ${p.membershipTier}` : null,
+      p.membership_tier ? `멤버십: ${p.membership_tier}` : null,
       p.perks.length ? `혜택: ${p.perks.join(", ")}` : null,
       p.tags.length ? `태그: ${p.tags.join(", ")}` : null,
     ]

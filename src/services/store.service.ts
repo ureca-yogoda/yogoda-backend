@@ -49,24 +49,24 @@ function serializeStore(
     address: item.address,
     phone: item.phone,
     hours: {
-      weekday: item.weekdayHours,
-      saturday: item.saturdayHours,
-      sunday: item.sundayHours,
+      weekday: item.weekday_hours,
+      saturday: item.saturday_hours,
+      sunday: item.sunday_hours,
     },
     services: item.services,
     coordinates: {
       latitude: item.location.coordinates[1],
       longitude: item.location.coordinates[0],
     },
-    isDirect: item.isDirect,
+    isDirect: item.is_direct,
     distanceKm: distanceKm === null ? null : Number(distanceKm.toFixed(1)),
   };
 }
 
 export async function getStores(query: StoreQuery) {
   const filter = {
-    isActive: true,
-    isDirect: true,
+    is_active: true,
+    is_direct: true,
     ...(query.region && { region: query.region }),
     ...(query.service && { services: query.service }),
     ...(query.keyword && {
@@ -92,14 +92,14 @@ export async function getStores(query: StoreQuery) {
   return {
     stores: items,
     regions: await StoreModel.distinct("region", {
-      isActive: true,
-      isDirect: true,
+      is_active: true,
+      is_direct: true,
     }),
   };
 }
 
 export async function getStoreByCode(code: string) {
-  const store = await StoreModel.findOne({ code, isActive: true });
+  const store = await StoreModel.findOne({ code, is_active: true });
   const serialized = serializeStore(store);
   if (!serialized) throw new AppError(404, "매장을 찾을 수 없어요.");
   return serialized;

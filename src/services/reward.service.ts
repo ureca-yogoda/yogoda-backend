@@ -40,15 +40,15 @@ export async function getAttendance(userId: string, month: string) {
   assertMonth(month);
   const records = await AttendanceRecordModel.find({
     user_id: userId,
-    date_key: { $gte: `${month}-01`, $lte: `${month}-31` },
+    attendance_date: { $gte: `${month}-01`, $lte: `${month}-31` },
   })
-    .sort({ date_key: 1 })
+    .sort({ attendance_date: 1 })
     .lean();
   const allRecords = await AttendanceRecordModel.find({ user_id: userId })
-    .select("date_key")
-    .sort({ date_key: -1 })
+    .select("attendance_date")
+    .sort({ attendance_date: -1 })
     .lean();
-  const attended = new Set(allRecords.map((record) => record.date_key));
+  const attended = new Set(allRecords.map((record) => record.attendance_date));
   let cursor = attended.has(getDateKey())
     ? getDateKey()
     : getPreviousDateKey(getDateKey());
@@ -65,15 +65,15 @@ export async function getAttendance(userId: string, month: string) {
     streak,
     monthlyCount: records.length,
     pointsPerCheckIn: ATTENDANCE_POINTS,
-    dates: records.map((record) => record.date_key),
+    dates: records.map((record) => record.attendance_date),
   };
 }
 
 export async function checkIn(userId: string) {
   const dateKey = getDateKey();
   const record = await AttendanceRecordModel.findOneAndUpdate(
-    { user_id: userId, date_key: dateKey },
-    { $setOnInsert: { checked_at: new Date(), points: ATTENDANCE_POINTS } },
+    { user_id: userId, attendance_date: dateKey },
+    { $setOnInsert: { reward_points: ATTENDANCE_POINTS } },
     { returnDocument: "after", upsert: true },
   );
   await addPoints(
@@ -85,7 +85,7 @@ export async function checkIn(userId: string) {
   await completeMissionFromAction(userId, "mission-uplus-one-attendance");
   return {
     date: dateKey,
-    points: record.points,
+    points: record.reward_points,
     wallet: await getPointWallet(userId),
   };
 }
@@ -102,8 +102,8 @@ export async function getBenefitCalendar(userId: string, month: string) {
       status: { $ne: "revoked" },
       expires_at: { $gte: start, $lte: end },
     }).lean(),
-    BenefitModel.find({ isActive: true, calendarDay: { $ne: null } })
-      .sort({ calendarDay: 1, sortOrder: 1 })
+    BenefitModel.find({ is_active: true, calendar_day: { $ne: null } })
+      .sort({ calendar_day: 1, sort_order: 1 })
       .lean(),
     SavedBenefitModel.find({ user_id: userId }).select("benefit_id").lean(),
   ]);
@@ -121,7 +121,7 @@ export async function getBenefitCalendar(userId: string, month: string) {
     month,
     events: [
       ...scheduledBenefits.flatMap((benefit) => {
-        const day = benefit.calendarDay;
+        const day = benefit.calendar_day;
         if (!day || day > end.getUTCDate()) return [];
         return [
           {

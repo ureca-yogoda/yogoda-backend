@@ -21,28 +21,28 @@ export async function getPlanCandidates(
   excludePlanCode?: string | null,
 ): Promise<PlanCandidate[]> {
   const plans = await PlanModel.find({
-    isActive: true,
+    is_active: true,
     ...(excludePlanCode ? { code: { $ne: excludePlanCode } } : {}),
   })
     .select(
-      "code name category monthlyFee discountFee data voice sms membershipTier perks tags recommendationTags",
+      "code name category monthly_fee discount_fee data voice sms membership_tier perks tags recommendation_tags",
     )
-    .sort({ sortOrder: 1, monthlyFee: 1 })
+    .sort({ sort_order: 1, monthly_fee: 1 })
     .lean();
 
   return plans.map((p) => ({
     code: p.code,
     name: p.name,
     category: p.category,
-    monthlyFee: p.monthlyFee,
-    discountFee: p.discountFee ?? null,
+    monthly_fee: p.monthly_fee,
+    discount_fee: p.discount_fee ?? null,
     dataDisplay: p.data?.display ?? "정보 없음",
     voice: p.voice,
     sms: p.sms,
-    membershipTier: p.membershipTier ?? null,
+    membership_tier: p.membership_tier ?? null,
     perks: p.perks ?? [],
     tags: p.tags ?? [],
-    recommendationTags: p.recommendationTags ?? [],
+    recommendation_tags: p.recommendation_tags ?? [],
   }));
 }
 
@@ -61,7 +61,7 @@ export function buildPlanCards(
       const plan = candidateMap.get(rec.code);
       if (!plan) return null;
 
-      const fee = plan.discountFee ?? plan.monthlyFee;
+      const fee = plan.discount_fee ?? plan.monthly_fee;
       const matchRate = Math.round(Math.min(100, Math.max(0, rec.matchRate)));
 
       return {
