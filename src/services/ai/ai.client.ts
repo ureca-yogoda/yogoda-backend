@@ -217,20 +217,20 @@ const PLAN_COMPARISON_SCHEMA = {
 };
 
 function serializePlan(plan: IPlan): string {
-  const fee = (plan.discount_fee ?? plan.monthly_fee).toLocaleString("ko-KR");
+  const fee = (plan.discountFee ?? plan.monthlyFee).toLocaleString("ko-KR");
 
-  const benefits = plan.benefit_details
+  const benefits = plan.benefitDetails
     .map((b) => {
-      const val = b.monthly_value
-        ? ` (월 ${b.monthly_value.toLocaleString("ko-KR")}원 상당)`
+      const val = b.monthlyValue
+        ? ` (월 ${b.monthlyValue.toLocaleString("ko-KR")}원 상당)`
         : "";
       const desc = b.description ? `: ${b.description}` : "";
       return `  - [${b.category}] ${b.title}${desc}${val}`;
     })
     .join("\n");
 
-  const choices = plan.choice_benefits
-    .filter((c) => c.step_type === "choice")
+  const choices = plan.choiceBenefits
+    .filter((c) => c.stepType === "choice")
     .map((c) => {
       const opts = c.options.map((o) => o.title).join(", ");
       return `  - ${c.title} → 선택 가능: ${opts}`;
@@ -243,13 +243,13 @@ function serializePlan(plan: IPlan): string {
     `요금제명: ${plan.name}`,
     `월 요금: ${fee}원`,
     `네트워크: ${plan.network}`,
-    `데이터: ${plan.data.display}${plan.data.amount_mb === null ? " (무제한)" : ""}`,
-    `  - 테더링: ${plan.data.sharing_display ?? "없음"}`,
-    `  - 가족 데이터: ${plan.data.family_data_display ?? "없음"}`,
+    `데이터: ${plan.data.display}${plan.data.amountMb === null ? " (무제한)" : ""}`,
+    `  - 테더링: ${plan.data.sharingDisplay ?? "없음"}`,
+    `  - 가족 데이터: ${plan.data.familyDataDisplay ?? "없음"}`,
     `통화: ${plan.voice}`,
-    `부가통화: ${plan.additional_voice ?? "없음"}`,
+    `부가통화: ${plan.additionalVoice ?? "없음"}`,
     `문자: ${plan.sms}`,
-    `멤버십: ${plan.membership_tier ?? "없음"}`,
+    `멤버십: ${plan.membershipTier ?? "없음"}`,
     `기본 혜택:\n${benefits || "  없음"}`,
     `선택 혜택:\n${choices || "  없음"}`,
     `부가서비스: ${perks}`,
