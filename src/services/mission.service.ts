@@ -1,37 +1,21 @@
-import { MissionModel, type IMission } from "../models/mission.model.js";
+import { MissionModel } from "../models/mission.model.js";
 import { UserMissionModel } from "../models/user-mission.model.js";
 import { AppError } from "../utils/AppError.js";
 import { addPoints, getPointWallet } from "./point.service.js";
 
-const rewardPointsByCategory: Record<IMission["category"], number> = {
-  attendance: 30,
-  quiz: 50,
-  event: 100,
-  subscription: 100,
-  profile: 50,
-  referral: 200,
-};
-
-function getRewardPoints(mission: IMission) {
-  return rewardPointsByCategory[mission.category];
-}
-
 export async function getMyMissions(userId: string) {
   const now = new Date();
   const missions = await MissionModel.find({
-    isActive: true,
+    is_active: true,
     status: "active",
     $and: [
       {
-        $or: [
-          { "period.startsAt": null },
-          { "period.startsAt": { $lte: now } },
-        ],
+        $or: [{ start_date: null }, { start_date: { $lte: now } }],
       },
-      { $or: [{ "period.endsAt": null }, { "period.endsAt": { $gte: now } }] },
+      { $or: [{ end_date: null }, { end_date: { $gte: now } }] },
     ],
   })
-    .sort({ recommendationWeight: -1, sortOrder: 1 })
+    .sort({ recommendation_weight: -1, sort_order: 1 })
     .lean();
 
   const records = await UserMissionModel.find({
@@ -51,9 +35,9 @@ export async function getMyMissions(userId: string) {
       category: mission.category,
       summary: mission.summary,
       requirement: mission.requirement,
-      reward: mission.reward,
-      rewardPoints: getRewardPoints(mission),
-      period: mission.period,
+      reward: `${mission.reward_points}P`,
+      rewardPoints: mission.reward_points,
+      period: { startsAt: mission.start_date, endsAt: mission.end_date },
       status: record?.status ?? "available",
       progress: record?.progress ?? 0,
     };
@@ -79,7 +63,7 @@ export async function getMyMissions(userId: string) {
 async function findActiveMission(code: string) {
   const mission = await MissionModel.findOne({
     code,
-    isActive: true,
+    is_active: true,
     status: "active",
   });
   if (!mission) {
@@ -135,7 +119,7 @@ export async function claimMissionReward(userId: string, code: string) {
   if (!record) {
     throw new AppError(409, "완료한 미션의 보상만 받을 수 있어요.");
   }
-  const points = getRewardPoints(mission);
+  const points = mission.reward_points;
   await addPoints(userId, points, mission.title, `mission:${mission.code}`);
   return { code, status: record.status, points };
 }

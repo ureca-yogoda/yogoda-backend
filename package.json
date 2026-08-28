@@ -9,6 +9,7 @@
     "seed:stores": "tsx src/seeds/store.seed.ts",
     "migrate:snake-case": "tsx src/seeds/migrate-snake-case-collections.ts",
     "migrate:chat-message-role": "tsx src/seeds/migrate-chat-message-role.ts",
+    "migrate:schema-standardization": "tsx src/seeds/migrate-schema-standardization.ts",
     "cleanup:legacy-collections": "tsx src/seeds/cleanup-legacy-collections.ts",
     "build": "tsc",
     "start": "node dist/server.js",

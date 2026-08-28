@@ -31,7 +31,7 @@ async function getUserPlan(userId: string): Promise<UserPlanCondition | null> {
   }
 
   return PlanModel.findById(user.current_plan_id)
-    .select("code monthlyFee membershipTier")
+    .select("code monthly_fee membership_tier")
     .lean();
 }
 
@@ -45,15 +45,15 @@ function serializeBenefit(
     code: benefit.code,
     title: benefit.title,
     category: benefit.category,
-    benefitType: benefit.benefitType,
+    benefitType: benefit.benefit_type,
     partner: benefit.partner,
     brand: benefit.brand,
     summary: benefit.summary,
     eligibility: benefit.eligibility,
     value: benefit.value,
-    usageLimit: benefit.usageLimit,
+    usageLimit: benefit.usage_limit,
     minMembershipTier: benefit.minMembershipTier,
-    period: benefit.period,
+    period: { startsAt: benefit.start_date, endsAt: benefit.end_date },
     tags: benefit.tags,
     saved,
     ...evaluateBenefitEligibility(benefit, plan),
@@ -64,24 +64,18 @@ export async function getBenefits(userId: string, filter: BenefitFilter) {
   const [plan, benefits, savedBenefits] = await Promise.all([
     getUserPlan(userId),
     BenefitModel.find({
-      isActive: true,
+      is_active: true,
       ...(filter !== "all" && { category: filter }),
       $and: [
         {
-          $or: [
-            { "period.startsAt": null },
-            { "period.startsAt": { $lte: new Date() } },
-          ],
+          $or: [{ start_date: null }, { start_date: { $lte: new Date() } }],
         },
         {
-          $or: [
-            { "period.endsAt": null },
-            { "period.endsAt": { $gte: new Date() } },
-          ],
+          $or: [{ end_date: null }, { end_date: { $gte: new Date() } }],
         },
       ],
     })
-      .sort({ recommendationWeight: -1, sortOrder: 1 })
+      .sort({ recommendation_weight: -1, sort_order: 1 })
       .lean(),
     SavedBenefitModel.find({ user_id: userId }).select("benefit_id").lean(),
   ]);
@@ -94,7 +88,7 @@ export async function getBenefits(userId: string, filter: BenefitFilter) {
   );
 
   return {
-    currentMembershipTier: plan?.membershipTier ?? null,
+    currentMembershipTier: plan?.membership_tier ?? null,
     eligibleCount: items.filter((benefit) => benefit.eligible).length,
     benefits: items,
   };
@@ -103,7 +97,7 @@ export async function getBenefits(userId: string, filter: BenefitFilter) {
 export async function getBenefit(userId: string, code: string) {
   const [plan, benefit] = await Promise.all([
     getUserPlan(userId),
-    BenefitModel.findOne({ code, isActive: true }).lean(),
+    BenefitModel.findOne({ code, is_active: true }).lean(),
   ]);
 
   if (!benefit) {
@@ -118,7 +112,7 @@ export async function getBenefit(userId: string, code: string) {
 }
 
 export async function saveBenefit(userId: string, code: string) {
-  const benefit = await BenefitModel.findOne({ code, isActive: true }).select(
+  const benefit = await BenefitModel.findOne({ code, is_active: true }).select(
     "_id",
   );
   if (!benefit) throw new AppError(404, "혜택을 찾을 수 없어요.");
@@ -151,7 +145,7 @@ export async function getSavedBenefits(userId: string) {
     getUserPlan(userId),
     BenefitModel.find({
       _id: { $in: saved.map((item) => item.benefit_id) },
-      isActive: true,
+      is_active: true,
     }).lean(),
   ]);
   const benefitMap = new Map(
@@ -183,11 +177,11 @@ export async function getNearbyBenefits(
         distanceField: "distanceMeters",
         maxDistance: query.maxDistance ?? 50000,
         spherical: true,
-        query: { isActive: true },
+        query: { is_active: true },
       },
     });
   } else {
-    pipeline.push({ $match: { isActive: true } }, { $sort: { name: 1 } });
+    pipeline.push({ $match: { is_active: true } }, { $sort: { name: 1 } });
   }
 
   pipeline.push(
@@ -200,7 +194,7 @@ export async function getNearbyBenefits(
       },
     },
     { $unwind: "$benefit" },
-    { $match: { "benefit.isActive": true } },
+    { $match: { "benefit.is_active": true } },
   );
 
   const [locations, savedBenefits] = await Promise.all([

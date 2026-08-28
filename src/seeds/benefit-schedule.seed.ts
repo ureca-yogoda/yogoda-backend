@@ -5,11 +5,11 @@ import { connectDB } from "../core/db/mongoose.js";
 import { BenefitModel } from "../models/benefit.model.js";
 
 const schedules = [
-  { code: "uplus-two-plus", calendarDay: 1 },
-  { code: "uplus-cgv-benefit", calendarDay: 5 },
-  { code: "uplus-baemin-benefit", calendarDay: 10 },
-  { code: "uplus-oliveyoung-benefit", calendarDay: 15 },
-  { code: "uplus-starbucks-benefit", calendarDay: 20 },
+  { code: "uplus-two-plus", calendar_day: 1 },
+  { code: "uplus-cgv-benefit", calendar_day: 5 },
+  { code: "uplus-baemin-benefit", calendar_day: 10 },
+  { code: "uplus-oliveyoung-benefit", calendar_day: 15 },
+  { code: "uplus-starbucks-benefit", calendar_day: 20 },
 ];
 
 async function updateBenefitSchedules() {
@@ -19,7 +19,7 @@ async function updateBenefitSchedules() {
   for (const schedule of schedules) {
     await BenefitModel.updateOne(
       { code: schedule.code },
-      { $set: { calendarDay: schedule.calendarDay } },
+      { $set: { calendar_day: schedule.calendar_day } },
     );
   }
   await mongoose.connection.close();

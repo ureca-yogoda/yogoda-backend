@@ -120,7 +120,9 @@ export async function notifyAttendanceReminder() {
 
   const [allUserIds, checkedInRecords] = await Promise.all([
     UserModel.find().select("_id").lean(),
-    AttendanceRecordModel.find({ date_key: todayKey }).select("user_id").lean(),
+    AttendanceRecordModel.find({ attendance_date: todayKey })
+      .select("user_id")
+      .lean(),
   ]);
 
   const checkedInUserIds = new Set(

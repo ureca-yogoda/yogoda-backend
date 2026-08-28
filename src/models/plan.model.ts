@@ -1,4 +1,5 @@
 import { Schema, model } from "mongoose";
+import type { Types } from "mongoose";
 
 export type PlanNetwork = "5G" | "LTE" | "5G/LTE";
 export type PlanCategory = "mobile" | "tablet" | "premium" | "legacy";
@@ -16,23 +17,23 @@ export type PlanChoiceBenefitDependencyMatch = "any" | "all";
 
 export interface IDataAllowance {
   display: string;
-  amountMb: number | null;
-  throttleKbps: number | null;
-  sharingDisplay: string | null;
-  familyDataDisplay: string | null;
+  amount_mb: number | null;
+  throttle_kbps: number | null;
+  sharing_display: string | null;
+  family_data_display: string | null;
 }
 
 export interface IPlanPromotion {
   badge: string | null;
-  effectiveMonthlyFee: number | null;
-  maxMonthlyBenefit: number | null;
+  effective_monthly_fee: number | null;
+  max_monthly_benefit: number | null;
 }
 
 export interface IPlanBenefitDetail {
   category: PlanBenefitCategory;
   title: string;
   description: string | null;
-  monthlyValue: number | null;
+  monthly_value: number | null;
 }
 
 export interface IPlanChoiceBenefitOption {
@@ -41,32 +42,32 @@ export interface IPlanChoiceBenefitOption {
   description: string | null;
 
   brand: string | null;
-  imageUrl: string | null;
+  image_url: string | null;
 
-  monthlyValue: number | null;
+  monthly_value: number | null;
 }
 
 export interface IPlanChoiceBenefitDependency {
-  stepCode: string;
-  optionCodes: string[];
+  step_code: string;
+  option_codes: string[];
   match: PlanChoiceBenefitDependencyMatch;
 }
 
 export interface IPlanChoiceBenefit {
   code: string;
 
-  stepType: PlanChoiceBenefitStepType;
+  step_type: PlanChoiceBenefitStepType;
   section: PlanChoiceBenefitSection;
 
-  sectionTitle: string | null;
+  section_title: string | null;
   title: string;
   instruction: string | null;
 
-  selectionCount: number;
+  selection_count: number;
   required: boolean;
-  sortOrder: number;
+  sort_order: number;
 
-  dependsOn: IPlanChoiceBenefitDependency[];
+  depends_on: IPlanChoiceBenefitDependency[];
 
   options: IPlanChoiceBenefitOption[];
 }
@@ -74,40 +75,41 @@ export interface IPlanChoiceBenefit {
 export interface IPlan {
   code: string;
   carrier: "LG_U_PLUS";
-  productLine: PlanProductLine;
+  product_line: PlanProductLine;
   name: string;
   category: PlanCategory;
   network: PlanNetwork;
   audiences: string[];
 
-  monthlyFee: number;
-  discountFee: number | null;
+  monthly_fee: number;
+  discount_fee: number | null;
 
   data: IDataAllowance;
 
   voice: string;
-  additionalVoice: string | null;
+  additional_voice: string | null;
   sms: string;
 
-  membershipTier: string | null;
-  smartDeviceBenefit: string | null;
+  membership_tier: string | null;
+  membership_tier_id?: Types.ObjectId | null;
+  smart_device_benefit: string | null;
 
   promotion: IPlanPromotion;
-  benefitDetails: IPlanBenefitDetail[];
-  choiceBenefits: IPlanChoiceBenefit[];
+  benefit_details: IPlanBenefitDetail[];
+  choice_benefits: IPlanChoiceBenefit[];
 
-  isPopular: boolean;
-  popularOrder: number | null;
+  is_popular: boolean;
+  popular_order: number | null;
 
   perks: string[];
   tags: string[];
-  recommendationTags: string[];
+  recommendation_tags: string[];
 
-  sourceUrl: string;
-  sourceCheckedAt: Date;
+  source_url: string;
+  source_checked_at: Date;
 
-  isActive: boolean;
-  sortOrder: number;
+  is_active: boolean;
+  sort_order: number;
 
   created_at?: Date;
   updated_at?: Date;
@@ -119,19 +121,19 @@ const dataAllowanceSchema = new Schema<IDataAllowance>(
       type: String,
       required: true,
     },
-    amountMb: {
+    amount_mb: {
       type: Number,
       default: null,
     },
-    throttleKbps: {
+    throttle_kbps: {
       type: Number,
       default: null,
     },
-    sharingDisplay: {
+    sharing_display: {
       type: String,
       default: null,
     },
-    familyDataDisplay: {
+    family_data_display: {
       type: String,
       default: null,
     },
@@ -147,11 +149,11 @@ const planPromotionSchema = new Schema<IPlanPromotion>(
       type: String,
       default: null,
     },
-    effectiveMonthlyFee: {
+    effective_monthly_fee: {
       type: Number,
       default: null,
     },
-    maxMonthlyBenefit: {
+    max_monthly_benefit: {
       type: Number,
       default: null,
     },
@@ -176,7 +178,7 @@ const planBenefitDetailSchema = new Schema<IPlanBenefitDetail>(
       type: String,
       default: null,
     },
-    monthlyValue: {
+    monthly_value: {
       type: Number,
       default: null,
     },
@@ -204,11 +206,11 @@ const planChoiceBenefitOptionSchema = new Schema<IPlanChoiceBenefitOption>(
       type: String,
       default: null,
     },
-    imageUrl: {
+    image_url: {
       type: String,
       default: null,
     },
-    monthlyValue: {
+    monthly_value: {
       type: Number,
       default: null,
     },
@@ -221,11 +223,11 @@ const planChoiceBenefitOptionSchema = new Schema<IPlanChoiceBenefitOption>(
 const planChoiceBenefitDependencySchema =
   new Schema<IPlanChoiceBenefitDependency>(
     {
-      stepCode: {
+      step_code: {
         type: String,
         required: true,
       },
-      optionCodes: {
+      option_codes: {
         type: [String],
         required: true,
         default: [],
@@ -249,7 +251,7 @@ const planChoiceBenefitSchema = new Schema<IPlanChoiceBenefit>(
       required: true,
     },
 
-    stepType: {
+    step_type: {
       type: String,
       required: true,
       enum: ["choice", "info"],
@@ -271,7 +273,7 @@ const planChoiceBenefitSchema = new Schema<IPlanChoiceBenefit>(
       default: "other",
     },
 
-    sectionTitle: {
+    section_title: {
       type: String,
       default: null,
     },
@@ -290,7 +292,7 @@ const planChoiceBenefitSchema = new Schema<IPlanChoiceBenefit>(
      * choice 단계는 1개 이상,
      * info 단계는 선택할 것이 없으므로 0으로 사용할 수 있음
      */
-    selectionCount: {
+    selection_count: {
       type: Number,
       required: true,
       default: 1,
@@ -303,7 +305,7 @@ const planChoiceBenefitSchema = new Schema<IPlanChoiceBenefit>(
       default: true,
     },
 
-    sortOrder: {
+    sort_order: {
       type: Number,
       required: true,
       default: 0,
@@ -313,7 +315,7 @@ const planChoiceBenefitSchema = new Schema<IPlanChoiceBenefit>(
      * 특정 이전 선택에 따라 단계 노출 여부 결정
      * 비어 있으면 항상 노출 가능한 단계
      */
-    dependsOn: {
+    depends_on: {
       type: [planChoiceBenefitDependencySchema],
       default: [],
     },
@@ -342,7 +344,7 @@ const planSchema = new Schema<IPlan>(
       default: "LG_U_PLUS",
     },
 
-    productLine: {
+    product_line: {
       type: String,
       required: true,
       enum: ["nerget", "uplus"],
@@ -372,12 +374,12 @@ const planSchema = new Schema<IPlan>(
       default: ["general"],
     },
 
-    monthlyFee: {
+    monthly_fee: {
       type: Number,
       required: true,
     },
 
-    discountFee: {
+    discount_fee: {
       type: Number,
       default: null,
     },
@@ -392,7 +394,7 @@ const planSchema = new Schema<IPlan>(
       required: true,
     },
 
-    additionalVoice: {
+    additional_voice: {
       type: String,
       default: null,
     },
@@ -402,12 +404,17 @@ const planSchema = new Schema<IPlan>(
       required: true,
     },
 
-    membershipTier: {
+    membership_tier: {
       type: String,
       default: null,
     },
+    membership_tier_id: {
+      type: Schema.Types.ObjectId,
+      ref: "MembershipTier",
+      default: null,
+    },
 
-    smartDeviceBenefit: {
+    smart_device_benefit: {
       type: String,
       default: null,
     },
@@ -417,23 +424,23 @@ const planSchema = new Schema<IPlan>(
       default: () => ({}),
     },
 
-    benefitDetails: {
+    benefit_details: {
       type: [planBenefitDetailSchema],
       default: [],
     },
 
-    choiceBenefits: {
+    choice_benefits: {
       type: [planChoiceBenefitSchema],
       default: [],
     },
 
-    isPopular: {
+    is_popular: {
       type: Boolean,
       required: true,
       default: false,
     },
 
-    popularOrder: {
+    popular_order: {
       type: Number,
       default: null,
     },
@@ -448,28 +455,28 @@ const planSchema = new Schema<IPlan>(
       default: [],
     },
 
-    recommendationTags: {
+    recommendation_tags: {
       type: [String],
       default: [],
     },
 
-    sourceUrl: {
+    source_url: {
       type: String,
       required: true,
     },
 
-    sourceCheckedAt: {
+    source_checked_at: {
       type: Date,
       required: true,
     },
 
-    isActive: {
+    is_active: {
       type: Boolean,
       required: true,
       default: true,
     },
 
-    sortOrder: {
+    sort_order: {
       type: Number,
       required: true,
       default: 0,
@@ -488,23 +495,23 @@ const planSchema = new Schema<IPlan>(
 planSchema.index({ carrier: 1, code: 1 }, { unique: true });
 
 planSchema.index({
-  productLine: 1,
-  isActive: 1,
-  monthlyFee: 1,
+  product_line: 1,
+  is_active: 1,
+  monthly_fee: 1,
 });
 
 planSchema.index({
-  productLine: 1,
-  isPopular: 1,
-  popularOrder: 1,
+  product_line: 1,
+  is_popular: 1,
+  popular_order: 1,
 });
 
 planSchema.index({
   category: 1,
-  monthlyFee: 1,
+  monthly_fee: 1,
 });
 
 planSchema.index({ tags: 1 });
-planSchema.index({ recommendationTags: 1 });
+planSchema.index({ recommendation_tags: 1 });
 
 export const PlanModel = model<IPlan>("Plan", planSchema);

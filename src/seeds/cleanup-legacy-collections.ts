@@ -11,6 +11,15 @@ const collectionMappings = [
   ["pointtransactions", "point_transactions"],
 ] as const;
 
+const obsoleteCollections = [
+  "recommendations",
+  "coupons",
+  "plan_benefits",
+  "plan_membership_tiers",
+  "membership_benefits",
+  "user_saved_brands",
+] as const;
+
 async function verifyAndDropLegacyCollection(
   sourceName: string,
   targetName: string,
@@ -55,6 +64,24 @@ async function cleanupLegacyCollections() {
 
   for (const [source, target] of collectionMappings) {
     await verifyAndDropLegacyCollection(source, target);
+  }
+
+  const db = mongoose.connection.db!;
+  const existingNames = new Set(
+    (await db.listCollections({}, { nameOnly: true }).toArray()).map(
+      (collection) => collection.name,
+    ),
+  );
+  for (const collectionName of obsoleteCollections) {
+    if (!existingNames.has(collectionName)) continue;
+    const count = await db.collection(collectionName).countDocuments();
+    if (count > 0) {
+      throw new Error(
+        `${collectionName}: ${count}건이 남아 있어 자동 삭제를 중단함`,
+      );
+    }
+    await db.collection(collectionName).drop();
+    console.log(`✅ ${collectionName}: 빈 레거시 컬렉션 삭제 완료`);
   }
 
   await mongoose.connection.close();
