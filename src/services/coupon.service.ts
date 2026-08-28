@@ -1,5 +1,3 @@
-import { randomBytes } from "node:crypto";
-
 import { isValidObjectId, Types } from "mongoose";
 
 import { BenefitModel } from "../models/benefit.model.js";
@@ -7,6 +5,10 @@ import { PlanModel } from "../models/plan.model.js";
 import { UserCouponModel } from "../models/user-coupon.model.js";
 import { UserModel } from "../models/user.model.js";
 import { AppError } from "../utils/AppError.js";
+import {
+  createBarcodeValue,
+  createCouponNumber,
+} from "../utils/coupon-credentials.js";
 import { meetsMembershipTier } from "./benefit-eligibility.js";
 
 export type CouponFilter =
@@ -22,18 +24,6 @@ function getEndOfMonth(date: Date) {
   return new Date(
     Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1) - 1,
   );
-}
-
-function createCouponNumber() {
-  return randomBytes(6)
-    .toString("hex")
-    .toUpperCase()
-    .match(/.{1,4}/g)!
-    .join("-");
-}
-
-function createBarcodeValue() {
-  return randomBytes(16).toString("hex").toUpperCase();
 }
 
 /*

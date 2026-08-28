@@ -7,6 +7,7 @@
     "seed:benefit-schedule": "tsx src/seeds/benefit-schedule.seed.ts",
     "seed:benefit-locations": "tsx src/seeds/benefit-location.seed.ts",
     "seed:stores": "tsx src/seeds/store.seed.ts",
+    "seed:point-products": "tsx src/seeds/point-products.seed.ts",
     "migrate:snake-case": "tsx src/seeds/migrate-snake-case-collections.ts",
     "migrate:chat-message-role": "tsx src/seeds/migrate-chat-message-role.ts",
     "migrate:schema-standardization": "tsx src/seeds/migrate-schema-standardization.ts",
