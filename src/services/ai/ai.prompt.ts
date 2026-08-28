@@ -177,3 +177,109 @@ function formatPlanCatalog(plans: PlanCandidate[]): string {
 
   return `[요금제 목록]\n${lines.join("\n")}`;
 }
+
+// ─── 가입 플로우 프롬프트 ──────────────────────────────────────────────────────
+
+export const SIGNUP_PROMPT_SECTION = `
+[가입 플로우 모드 - 이 섹션이 있을 때만 적용]
+사용자가 특정 요금제를 선택하고 가입을 진행하려 합니다. 추천 단계는 완전히 건너뛰고,
+아래 순서대로 한 단계씩 진행하세요. 모든 응답에서 action은 반드시 "signup"이어야 합니다.
+
+[가입 단계 순서]
+1. confirm_plan    : 요금제 정보(이름·금액)를 보여주며 가입 유형을 선택받습니다.
+                     quickReplies: ["신규가입", "번호이동"]
+2. fraud_warning   : 개통 사기 피해 예방 안내를 전달합니다.
+                     이 단계에서는 message에 아래 내용을 반드시 포함하세요:
+                     "휴대폰·유심 개통 목적을 반드시 직접 확인하시고, 타인에게 양도하거나
+                     금융 사기에 이용되는 경우 법적 책임이 발생할 수 있습니다."
+                     quickReplies: ["확인했어요"]
+3. terms_agreement : LG U+ 서비스 이용약관 및 개인정보 수집·이용에 동의를 받습니다.
+                     quickReplies: ["전체 동의합니다"]
+4. collect_info    : 본인 확인을 위해 이름과 생년월일(8자리)을 순서대로 수집합니다.
+                     이름을 먼저 묻고, 답변 후 생년월일을 묻습니다.
+                     (두 값이 모두 모이면 다음 단계로 넘어가세요)
+5. select_benefits : 요금제에 선택형 혜택이 있는 경우에만 진행합니다.
+                     혜택이 없으면 이 단계를 건너뛰세요.
+6. select_payment  : 요금 납부 방법을 선택받습니다.
+                     quickReplies: ["계좌이체", "신용카드", "카카오페이", "네이버페이", "토스"]
+7. final_confirm   : 지금까지 수집된 정보를 마크다운으로 요약해 보여주고 최종 확인을 받습니다.
+                     quickReplies: ["가입 신청하기", "처음부터 다시"]
+8. completed       : 가입이 완료됐음을 알리는 메시지를 보냅니다.
+                     이름은 message에 언급하되, 주민번호·생년월일 등 민감 정보는 절대 반복하지 마세요.
+
+[signupData 응답 규칙]
+- 매 응답에서 signupData는 지금까지 수집된 가입 정보 전체를 누락 없이 포함하세요.
+- 이번 턴에서 새로 얻은 값을 추가하거나 수정해서 반환합니다.
+- signupStep은 현재 완료된 단계가 아니라 다음에 처리할 단계를 반환합니다.
+  (예: 가입 유형을 방금 받았으면 signupStep: "fraud_warning")
+
+[개인정보 처리 안내]
+- 이름·생년월일은 본인 확인 목적으로만 사용되며 별도로 저장되지 않는다고 안내하세요.
+`.trim();
+
+/** 가입 플로우용 선택형 혜택 정보 포맷 */
+export function formatChoiceBenefitsForSignup(
+  choiceBenefits: Array<{
+    code: string;
+    title: string;
+    selectionCount: number;
+    required: boolean;
+    options: Array<{ code: string; title: string; description: string | null }>;
+  }>,
+): string {
+  const selectable = choiceBenefits.filter((b) => b.options.length > 0);
+  if (selectable.length === 0) return "";
+
+  const lines = selectable.map((b) => {
+    const opts = b.options
+      .map(
+        (o) =>
+          `  - ${o.code}: ${o.title}${o.description ? ` (${o.description})` : ""}`,
+      )
+      .join("\n");
+    return `• ${b.title} (${b.selectionCount}개 선택, ${b.required ? "필수" : "선택"})\n${opts}`;
+  });
+
+  return `[선택형 혜택 목록]\n${lines.join("\n\n")}`;
+}
+
+/** 가입 플로우용 시스템 프롬프트를 빌드합니다 */
+export function buildSignupSystemPrompt(
+  basePrompt: string,
+  preselectedPlan: { code: string; name: string; monthlyFee: number },
+  signupCollectedData: Record<string, unknown> | undefined,
+  choiceBenefitsBlock: string,
+): string {
+  const collectedLines = signupCollectedData
+    ? Object.entries(signupCollectedData)
+        .filter(([, v]) => v !== undefined && v !== null)
+        .map(([k, v]) => `- ${k}: ${JSON.stringify(v)}`)
+        .join("\n")
+    : "아직 없음";
+
+  const responseFormatBlock = `[응답 형식]
+아래 스키마를 따르는 JSON으로만 응답하세요:
+- action: 반드시 "signup"
+- signupStep: 다음에 처리할 단계 이름 (문자열)
+- message: 사용자에게 보여줄 마크다운 텍스트
+- signupData: 지금까지 누적된 가입 정보 전체 (매 턴 전체를 반환)
+- quickReplies: 이 단계에서 제시할 빠른 답변 후보 배열`;
+
+  return `
+${basePrompt}
+
+${SIGNUP_PROMPT_SECTION}
+
+${responseFormatBlock}
+
+[가입 대상 요금제]
+- code: ${preselectedPlan.code}
+- name: ${preselectedPlan.name}
+- 월 요금: ${preselectedPlan.monthlyFee.toLocaleString("ko-KR")}원
+
+[현재까지 수집된 가입 정보]
+${collectedLines}
+
+${choiceBenefitsBlock}
+`.trim();
+}

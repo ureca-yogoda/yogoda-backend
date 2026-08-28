@@ -235,3 +235,18 @@ export async function claimGuestSession(userId: string, sessionId: string) {
     { new: true },
   );
 }
+
+// ─── 가입 플로우 데이터 저장 ───────────────────────────────────────────────────
+
+/**
+ * 가입 플로우에서 AI가 매 턴 반환하는 signupData를 세션에 누적 저장합니다.
+ * 세션이 끊기고 재연결돼도 가입 진행 상태가 유지됩니다.
+ */
+export async function updateSignupCollectedData(
+  sessionId: string,
+  signupData: Record<string, unknown>,
+): Promise<void> {
+  await ChatSessionModel.findByIdAndUpdate(sessionId, {
+    $set: { signup_collected_data: signupData },
+  });
+}

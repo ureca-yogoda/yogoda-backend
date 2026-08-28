@@ -26,6 +26,7 @@ export interface IChatSession {
   status: ChatSessionStatus | null;
   // 사용자가 도달한 마지막 퍼널 단계. 아직 아무 단계에도 도달하지 않았으면 null
   last_stage: ChatSessionFunnelStage | null;
+  signup_collected_data: Record<string, unknown> | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -63,6 +64,7 @@ const chatSessionSchema = new Schema<IChatSession>(
       ],
       default: null,
     },
+    signup_collected_data: { type: Schema.Types.Mixed, default: null },
   },
   {
     collection: "chat_sessions",
