@@ -356,7 +356,6 @@ ${serializePlan(selectedPlan)}
 const SIGNUP_DATA_SCHEMA = {
   type: "object",
   properties: {
-    signupType: { type: "string", enum: ["신규가입", "번호이동"] },
     fraudWarningAcknowledged: { type: "boolean" },
     agreedToTerms: { type: "boolean" },
     name: { type: "string" },
@@ -376,7 +375,6 @@ const SIGNUP_RESPONSE_SCHEMA = {
     signupStep: {
       type: "string",
       enum: [
-        "confirm_plan",
         "fraud_warning",
         "terms_agreement",
         "collect_info",

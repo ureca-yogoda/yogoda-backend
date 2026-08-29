@@ -407,7 +407,7 @@ export interface SubscribePlanParams {
   userId: string;
   planCode: string;
   selectedOptions: Record<string, string[]>;
-  signupType: "신규가입" | "번호이동";
+  signupType?: "신규가입" | "번호이동";
   paymentMethod: "계좌이체" | "신용카드" | "카카오페이" | "네이버페이" | "토스";
 }
 
@@ -419,7 +419,7 @@ export interface SubscribePlanResult {
   joinedAt: Date;
   monthlyFee: number;
   savings: PlanSavings | null;
-  signupType: "신규가입" | "번호이동";
+  signupType?: "신규가입" | "번호이동";
   paymentMethod: "계좌이체" | "신용카드" | "카카오페이" | "네이버페이" | "토스";
 }
 
