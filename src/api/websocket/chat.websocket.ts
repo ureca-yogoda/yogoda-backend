@@ -278,14 +278,12 @@ export function setupChatSocket(io: Server) {
             const selectedBenefits =
               (sd?.selectedBenefits as Record<string, string[]> | undefined) ??
               {};
-            const signupType = sd?.signupType ?? "신규가입";
             const paymentMethod = sd?.paymentMethod ?? "신용카드";
 
             console.log("[가입 DB] 시도:", {
               userId,
               planCode: preselectedPlanCode,
               selectedBenefits,
-              signupType,
               paymentMethod,
             });
 
@@ -294,7 +292,6 @@ export function setupChatSocket(io: Server) {
                 userId,
                 planCode: preselectedPlanCode,
                 selectedOptions: selectedBenefits,
-                signupType,
                 paymentMethod,
               });
 
@@ -304,7 +301,6 @@ export function setupChatSocket(io: Server) {
                 planCode: preselectedPlanCode,
                 planName: plan.name,
                 monthlyFee: plan.discountFee ?? plan.monthlyFee,
-                signupType,
                 paymentMethod,
               });
 

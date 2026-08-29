@@ -52,7 +52,6 @@ export interface ChatRecommendation {
 // ─── 가입 플로우 ───────────────────────────────────────────────────────────────
 
 export type SignupStep =
-  | "confirm_plan" // 요금제 확인 + 가입 유형 선택 (신규/번호이동)
   | "fraud_warning" // 개통 사기 예방 안내 확인
   | "terms_agreement" // 이용약관 동의
   | "collect_info" // 본인 확인 (이름 + 생년월일)
@@ -63,7 +62,6 @@ export type SignupStep =
 
 /** AI가 가입 단계마다 수집·누적하는 정보 */
 export interface SignupCollectedData {
-  signupType?: "신규가입" | "번호이동";
   fraudWarningAcknowledged?: boolean;
   agreedToTerms?: boolean;
   name?: string;
