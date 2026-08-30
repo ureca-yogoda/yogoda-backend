@@ -244,6 +244,41 @@ export function setupChatSocket(io: Server) {
 
           await saveMessage(currentSessionId, "ai", decision.message);
 
+          // 카드 타입 메시지 DB 저장 (재접속/관리자 열람 시 복원용)
+          const planSnapshot = {
+            code: plan.code,
+            name: plan.name,
+            monthlyFee: plan.discountFee ?? plan.monthlyFee,
+          };
+          const mergedSignupData = {
+            ...(currentSignupData ?? {}),
+            ...(decision.signupData
+              ? (decision.signupData as unknown as Record<string, unknown>)
+              : {}),
+          };
+
+          if (decision.signupStep === "terms_agreement") {
+            await saveMessage(currentSessionId, "ai", "", undefined, "terms");
+          } else if (decision.signupStep === "fraud_warning") {
+            await saveMessage(
+              currentSessionId,
+              "ai",
+              "",
+              undefined,
+              "fraud_warning",
+            );
+          } else if (decision.signupStep === "final_confirm") {
+            await saveMessage(
+              currentSessionId,
+              "ai",
+              "",
+              undefined,
+              "signup_summary",
+              mergedSignupData,
+              planSnapshot,
+            );
+          }
+
           // signupData 세션에 누적 저장
           if (decision.signupData) {
             const updated = {
@@ -296,6 +331,15 @@ export function setupChatSocket(io: Server) {
               });
 
               await recordConversionEvent(currentSessionId, "signup_completed");
+
+              // signup_complete 카드 DB 저장
+              await saveMessage(
+                currentSessionId,
+                "ai",
+                "",
+                undefined,
+                "signup_complete",
+              );
 
               socket.emit("signup_complete", {
                 planCode: preselectedPlanCode,
