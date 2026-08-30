@@ -52,7 +52,7 @@ const chatMessageSchema = new Schema<IChatMessage>(
     _id: { type: String, default: () => randomUUID() },
     session_id: { type: String, required: true },
     role: { type: String, required: true, enum: ["user", "ai"] },
-    content: { type: String, required: true },
+    content: { type: String, required: false, default: "" },
     message_type: {
       type: String,
       enum: [

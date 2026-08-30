@@ -217,6 +217,19 @@ export function setupChatSocket(io: Server) {
             return;
           }
 
+          // 로그인 사용자가 이미 동일 요금제를 이용 중이면 가입 차단
+          if (userId) {
+            const activePlan = await getCurrentPlan(userId);
+            if (activePlan?.planCode === preselectedPlanCode) {
+              socket.emit(
+                "chunk",
+                `**${plan.name}**은(는) 현재 이용 중인 요금제예요. 다른 요금제를 선택해 주세요.`,
+              );
+              socket.emit("done");
+              return;
+            }
+          }
+
           const { decision, interactionId } = await getSignupDecision({
             message,
             previousInteractionId,
