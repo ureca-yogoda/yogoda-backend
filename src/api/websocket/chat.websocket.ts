@@ -304,6 +304,10 @@ export function setupChatSocket(io: Server) {
                 paymentMethod,
               });
 
+              // 가입 완료 후 signupData 초기화 (재가입 시 정보 재수집을 위해)
+              signupCollectedData = undefined;
+              await updateSignupCollectedData(currentSessionId, {});
+
               console.log(
                 `✅ 가입 완료: userId=${userId}, plan=${preselectedPlanCode}`,
               );

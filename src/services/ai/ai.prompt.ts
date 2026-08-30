@@ -191,6 +191,10 @@ export const SIGNUP_PROMPT_SECTION = `
 아래 순서대로 한 단계씩 진행하세요. 모든 응답에서 action은 반드시 "signup"이어야 합니다.
 첫 번째 단계는 항상 fraud_warning입니다.
 
+[중요] signupData가 비어있거나 fraudWarningAcknowledged가 없는 경우, 이전 채팅 메시지에
+가입 완료(completed) 내용이 있더라도 새로운 가입 요청으로 간주하고 fraud_warning부터 반드시 새로 시작하세요.
+이전 가입 이력은 완전히 무시하세요.
+
 [가입 단계 순서]
 1. fraud_warning   : 개통 사기 피해 예방 안내를 전달합니다.
                      이 단계에서는 message에 아래 내용을 반드시 포함하세요:
