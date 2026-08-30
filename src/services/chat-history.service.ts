@@ -4,7 +4,9 @@ import { FUNNEL_STAGE_ORDER } from "../constants/funnel-stage.js";
 import {
   ChatMessageModel,
   type ChatMessageRole,
+  type ChatMessageType,
   type IChatMessagePlanCard,
+  type IChatMessagePreselectedPlan,
 } from "../models/chat-message.model.js";
 import {
   ChatSessionModel,
@@ -129,26 +131,36 @@ export async function getSessionMessages(sessionId: string) {
     id: doc._id,
     role: doc.role,
     content: doc.content,
+    messageType: (doc.message_type ?? "text") as ChatMessageType,
     plans: doc.plans,
+    signupData: doc.signup_data,
+    preselectedPlan: doc.preselected_plan,
     createdAt: doc.created_at,
   }));
 }
 
 /**
- * 메시지 한 건을 세션에 저장하고, 세션의 updated_at을 갱신합니다.
- * plans는 AI가 요금제를 추천한 메시지에만 함께 넘어오며, 재접속 시 카드를 그대로 복원하는 데 쓰입니다.
+ * 메시지 한 건을 세션에 저장하고 세션의 updated_at을 갱신합니다.
+ * messageType이 카드 타입(fraud_warning, terms 등)이면 content는 빈 문자열로 저장하며,
+ * 재접속·관리자 열람 시 카드를 그대로 복원하는 데 사용됩니다.
  */
 export async function saveMessage(
   sessionId: string,
   role: ChatMessageRole,
   content: string,
   plans?: IChatMessagePlanCard[],
+  messageType?: ChatMessageType,
+  signupData?: Record<string, unknown>,
+  preselectedPlan?: IChatMessagePreselectedPlan,
 ) {
   await ChatMessageModel.create({
     session_id: sessionId,
     role,
     content,
     plans,
+    message_type: messageType ?? "text",
+    signup_data: signupData,
+    preselected_plan: preselectedPlan,
   });
   await ChatSessionModel.updateOne(
     { _id: sessionId },

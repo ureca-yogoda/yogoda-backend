@@ -217,6 +217,19 @@ export function setupChatSocket(io: Server) {
             return;
           }
 
+          // 로그인 사용자가 이미 동일 요금제를 이용 중이면 가입 차단
+          if (userId) {
+            const activePlan = await getCurrentPlan(userId);
+            if (activePlan?.planCode === preselectedPlanCode) {
+              socket.emit(
+                "chunk",
+                `**${plan.name}**은(는) 현재 이용 중인 요금제예요. 다른 요금제를 선택해 주세요.`,
+              );
+              socket.emit("done");
+              return;
+            }
+          }
+
           const { decision, interactionId } = await getSignupDecision({
             message,
             previousInteractionId,
@@ -243,6 +256,41 @@ export function setupChatSocket(io: Server) {
           });
 
           await saveMessage(currentSessionId, "ai", decision.message);
+
+          // 카드 타입 메시지 DB 저장 (재접속/관리자 열람 시 복원용)
+          const planSnapshot = {
+            code: plan.code,
+            name: plan.name,
+            monthlyFee: plan.discountFee ?? plan.monthlyFee,
+          };
+          const mergedSignupData = {
+            ...(currentSignupData ?? {}),
+            ...(decision.signupData
+              ? (decision.signupData as unknown as Record<string, unknown>)
+              : {}),
+          };
+
+          if (decision.signupStep === "terms_agreement") {
+            await saveMessage(currentSessionId, "ai", "", undefined, "terms");
+          } else if (decision.signupStep === "fraud_warning") {
+            await saveMessage(
+              currentSessionId,
+              "ai",
+              "",
+              undefined,
+              "fraud_warning",
+            );
+          } else if (decision.signupStep === "final_confirm") {
+            await saveMessage(
+              currentSessionId,
+              "ai",
+              "",
+              undefined,
+              "signup_summary",
+              mergedSignupData,
+              planSnapshot,
+            );
+          }
 
           // signupData 세션에 누적 저장
           if (decision.signupData) {
@@ -297,12 +345,25 @@ export function setupChatSocket(io: Server) {
 
               await recordConversionEvent(currentSessionId, "signup_completed");
 
+              // signup_complete 카드 DB 저장
+              await saveMessage(
+                currentSessionId,
+                "ai",
+                "",
+                undefined,
+                "signup_complete",
+              );
+
               socket.emit("signup_complete", {
                 planCode: preselectedPlanCode,
                 planName: plan.name,
                 monthlyFee: plan.discountFee ?? plan.monthlyFee,
                 paymentMethod,
               });
+
+              // 가입 완료 후 signupData 초기화 (재가입 시 정보 재수집을 위해)
+              signupCollectedData = undefined;
+              await updateSignupCollectedData(currentSessionId, {});
 
               console.log(
                 `✅ 가입 완료: userId=${userId}, plan=${preselectedPlanCode}`,

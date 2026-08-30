@@ -13,13 +13,24 @@ export interface IChatMessagePlanCard {
   matchRate: string;
 }
 
+export type ChatMessageType =
+  "text" | "fraud_warning" | "terms" | "signup_summary" | "signup_complete";
+
+export interface IChatMessagePreselectedPlan {
+  code: string;
+  name: string;
+  monthlyFee: number;
+}
+
 export interface IChatMessage {
   _id: string;
   session_id: string;
   role: ChatMessageRole;
   content: string;
-  // AI가 요금제를 추천한 메시지에만 존재함 (새로고침/재접속 시에도 카드를 그대로 복원하기 위해 저장)
+  message_type?: ChatMessageType;
   plans?: IChatMessagePlanCard[];
+  signup_data?: Record<string, unknown>;
+  preselected_plan?: IChatMessagePreselectedPlan;
   created_at: Date;
 }
 
@@ -41,8 +52,27 @@ const chatMessageSchema = new Schema<IChatMessage>(
     _id: { type: String, default: () => randomUUID() },
     session_id: { type: String, required: true },
     role: { type: String, required: true, enum: ["user", "ai"] },
-    content: { type: String, required: true },
+    content: { type: String, required: false, default: "" },
+    message_type: {
+      type: String,
+      enum: [
+        "text",
+        "fraud_warning",
+        "terms",
+        "signup_summary",
+        "signup_complete",
+      ],
+      default: "text",
+    },
     plans: { type: [chatMessagePlanCardSchema], required: false },
+    signup_data: { type: Schema.Types.Mixed, required: false },
+    preselected_plan: {
+      type: new Schema(
+        { code: String, name: String, monthlyFee: Number },
+        { _id: false },
+      ),
+      required: false,
+    },
   },
   {
     collection: "chat_messages",
@@ -51,7 +81,7 @@ const chatMessageSchema = new Schema<IChatMessage>(
   },
 );
 
-// 세션 하나의 대화 내역을 시간순으로 조회하기 위한 인덱스
+// 세션별 시간순 조회 인덱스
 chatMessageSchema.index({ session_id: 1, created_at: 1 });
 
 export const ChatMessageModel = model<IChatMessage>(
