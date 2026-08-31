@@ -14,7 +14,13 @@ export interface IChatMessagePlanCard {
 }
 
 export type ChatMessageType =
-  "text" | "fraud_warning" | "terms" | "signup_summary" | "signup_complete";
+  | "text"
+  | "signup_entry"
+  | "fraud_warning"
+  | "terms"
+  | "identity_verification"
+  | "signup_summary"
+  | "signup_complete";
 
 export interface IChatMessagePreselectedPlan {
   code: string;
@@ -57,8 +63,10 @@ const chatMessageSchema = new Schema<IChatMessage>(
       type: String,
       enum: [
         "text",
+        "signup_entry",
         "fraud_warning",
         "terms",
+        "identity_verification",
         "signup_summary",
         "signup_complete",
       ],

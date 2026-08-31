@@ -54,6 +54,7 @@ export interface ChatRecommendation {
 export type SignupStep =
   | "fraud_warning" // 개통 사기 예방 안내 확인
   | "terms_agreement" // 이용약관 동의
+  | "identity_verification" // 휴대폰 본인인증 (형식상 인증 모달)
   | "collect_info" // 본인 확인 (이름 + 생년월일)
   | "select_benefits" // 선택형 혜택 (choiceBenefits가 있는 요금제만)
   | "select_payment" // 요금납부 방법 선택
@@ -64,6 +65,8 @@ export type SignupStep =
 export interface SignupCollectedData {
   fraudWarningAcknowledged?: boolean;
   agreedToTerms?: boolean;
+  identityVerified?: boolean;
+  phoneNumber?: string;
   name?: string;
   birth?: string;
   /** choiceBenefit stepCode → 선택한 optionCode 배열 */
