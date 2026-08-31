@@ -112,6 +112,39 @@ function resolveConnectionUserId(token: string | undefined): string | null {
   }
 }
 
+/**
+ * 사용자 메시지와 현재 가입 단계를 기반으로 로딩 중 표시할 안내 문구를 반환함.
+ * AI 호출 전에 즉시 emit해 로딩 체감을 줄임.
+ */
+function getThinkingMessage(
+  message: string,
+  signupStep?: string | null,
+): string {
+  if (signupStep) {
+    const map: Record<string, string> = {
+      fraud_warning: "개통 안내를 준비하고 있어요",
+      terms_agreement: "약관 내용을 불러오고 있어요",
+      collect_info: "입력하신 정보를 확인하고 있어요",
+      select_benefits: "혜택 옵션을 정리하고 있어요",
+      select_payment: "납부 방법을 확인하고 있어요",
+      final_confirm: "가입 정보를 정리하고 있어요",
+      completed: "가입을 처리하고 있어요",
+    };
+    const msg = map[signupStep];
+    if (msg) return msg;
+  }
+
+  const m = message;
+  if (/비교/.test(m)) return "요금제를 비교하고 있어요";
+  if (/추천/.test(m)) return "딱 맞는 요금제를 찾고 있어요";
+  if (/가입/.test(m)) return "가입 정보를 확인하고 있어요";
+  if (/데이터|용량/.test(m)) return "데이터 요금제를 살펴보고 있어요";
+  if (/가격|요금|얼마/.test(m)) return "요금 정보를 불러오고 있어요";
+  if (/혜택|멤버십/.test(m)) return "혜택 정보를 확인하고 있어요";
+  if (/질문|뭐|어떤|어느/.test(m)) return "질문을 분석하고 있어요";
+  return "답변을 생각하고 있어요";
+}
+
 export function setupChatSocket(io: Server) {
   const chatNamespace = io.of("/chat");
 
@@ -185,6 +218,13 @@ export function setupChatSocket(io: Server) {
         if (!isKickoff) {
           await saveMessage(currentSessionId, "user", message);
         }
+
+        // AI 호출 전에 즉시 로딩 문구를 전송해 체감 대기 시간을 줄임
+        const currentStep = signupCollectedData
+          ? ((signupCollectedData as Record<string, unknown>).signupStep as
+              string | undefined)
+          : undefined;
+        socket.emit("thinking", getThinkingMessage(message, currentStep));
 
         // ── 가입 플로우 분기 ──────────────────────────────────────────────────
         if (preselectedPlanCode) {
