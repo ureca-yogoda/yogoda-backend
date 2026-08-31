@@ -164,6 +164,19 @@ router.post("/", authMiddleware, adminMiddleware, createPromptHandler);
  *     tags: [Admin/Prompts]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: 조회할 페이지 번호
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: 페이지당 항목 수
  *     responses:
  *       200:
  *         description: 전체 버전 목록 조회 성공
@@ -197,6 +210,21 @@ router.post("/", authMiddleware, adminMiddleware, createPromptHandler);
  *                         type: number
  *                       isActive:
  *                         type: boolean
+ *                 totalCount:
+ *                   type: number
+ *                 page:
+ *                   type: number
+ *                 limit:
+ *                   type: number
+ *       400:
+ *         description: page 또는 limit 파라미터가 잘못됨
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
  *       401:
  *         description: 인증 실패
  *         content:

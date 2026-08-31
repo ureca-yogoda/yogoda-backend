@@ -34,6 +34,9 @@ export interface PromptHistoryItem {
 
 export interface PromptHistoryResponse {
   versions: PromptHistoryItem[];
+  totalCount: number;
+  page: number;
+  limit: number;
 }
 
 export interface PromptDetailResponse {

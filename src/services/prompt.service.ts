@@ -8,6 +8,7 @@ import {
   ActivePromptResponse,
   CreatePromptResponse,
   PromptDetailResponse,
+  PromptHistoryItem,
   PromptHistoryResponse,
 } from "../schemas/prompt.schema.js";
 import { AppError } from "../utils/AppError.js";
@@ -93,7 +94,13 @@ export const createAndDeployPrompt = async (
   };
 };
 
-export const getPromptHistory = async (): Promise<PromptHistoryResponse> => {
+/*
+ * 대시보드의 버전별 전환율 집계(dashboard.service.ts)에서도 그대로 재사용하기 위해
+ * 페이지네이션 없이 전체 버전을 최신순으로 반환하는 내부 헬퍼로 분리함
+ */
+export const getAllPromptVersionsSorted = async (): Promise<
+  PromptHistoryItem[]
+> => {
   const prompts = await PromptModel.find()
     .sort({ deployed_at: 1 })
     .populate<{ deployed_by: PopulatedDeployer }>("deployed_by", "nickname")
@@ -125,7 +132,23 @@ export const getPromptHistory = async (): Promise<PromptHistoryResponse> => {
   }
 
   // 최신 버전순으로 반환
-  return { versions: versions.reverse() };
+  return versions.reverse();
+};
+
+export const getPromptHistory = async (
+  page: number,
+  limit: number,
+): Promise<PromptHistoryResponse> => {
+  const sorted = await getAllPromptVersionsSorted();
+  const totalCount = sorted.length;
+  const start = (page - 1) * limit;
+
+  return {
+    versions: sorted.slice(start, start + limit),
+    totalCount,
+    page,
+    limit,
+  };
 };
 
 export const getPromptDetail = async (
