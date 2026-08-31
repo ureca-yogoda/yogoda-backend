@@ -195,6 +195,14 @@ export const SIGNUP_PROMPT_SECTION = `
 가입 완료(completed) 내용이 있더라도 새로운 가입 요청으로 간주하고 fraud_warning부터 반드시 새로 시작하세요.
 이전 가입 이력은 완전히 무시하세요.
 
+[가입 플로우 중 사용자 질문 처리 - 매우 중요]
+- 사용자가 현재 단계와 무관한 질문(요금, 혜택, 추가 요금 등)을 하면: 질문에 먼저 성실히 답한 뒤,
+  현재 단계를 그대로 유지하며 다시 안내하세요. (signupStep 변경 금지)
+- 질문에 답하는 동안 signupData에 값을 임의로 채우거나 추측하지 마세요.
+  사용자가 명시적으로 선택·입력한 값만 signupData에 기록하세요.
+- 특히 quickReplies로 제시한 선택지는 사용자가 직접 해당 텍스트를 보내거나 탭한 경우에만 선택된 것으로 처리하세요.
+  아직 선택하지 않은 상태에서 "앞서 X를 선택하셨는데" 같은 표현을 절대 쓰지 마세요.
+
 [가입 단계 순서]
 1. fraud_warning   : 개통 사기 피해 예방 안내를 전달합니다.
                      이 단계에서는 message에 아래 내용을 반드시 포함하세요:
@@ -212,6 +220,8 @@ export const SIGNUP_PROMPT_SECTION = `
                      - 검증 실패 시: signupStep을 "collect_info"로 유지하고, quickReplies는 빈 배열([])로 두세요. 다음 단계의 quickReplies를 절대 미리 내리지 마세요.
 4. select_benefits : 요금제에 선택형 혜택이 있는 경우에만 진행합니다.
                      혜택이 없으면 이 단계를 건너뛰세요.
+                     사용자가 혜택을 선택하면 signupData.selectedBenefits에
+                     { "[stepCode]": ["optionCode"] } 형식으로 저장하세요. (혜택 목록의 stepCode와 optionCode를 그대로 사용할 것)
 5. select_payment  : 요금 납부 방법을 선택받습니다.
                      quickReplies: ["계좌이체", "신용카드", "카카오페이", "네이버페이", "토스"]
 6. final_confirm   : 수집된 정보는 별도 카드로 자동 표시됩니다.
@@ -232,6 +242,10 @@ export const SIGNUP_PROMPT_SECTION = `
   - 생년월일 → birth (8자리 숫자 문자열, 예: "19900101")
   - 납부 방법 → paymentMethod (문자열)
   - 사기 안내 확인 → fraudWarningAcknowledged (boolean)
+  - 선택 혜택 → selectedBenefits (객체: { [stepCode]: [optionCode 배열] })
+    예: { "ott": ["netflix_standard_ad"] }
+- signupData는 매 응답마다 지금까지 수집된 모든 필드를 빠짐없이 포함하세요.
+  특히 final_confirm 단계에서는 name, birth, paymentMethod, selectedBenefits(해당 시) 모두 포함 필수입니다.
 
 [개인정보 처리 안내]
 - 이름·생년월일은 본인 확인 목적으로만 사용되며 별도로 저장되지 않는다고 안내하세요.
@@ -257,7 +271,7 @@ export function formatChoiceBenefitsForSignup(
           `  - ${o.code}: ${o.title}${o.description ? ` (${o.description})` : ""}`,
       )
       .join("\n");
-    return `• ${b.title} (${b.selectionCount}개 선택, ${b.required ? "필수" : "선택"})\n${opts}`;
+    return `• [stepCode: ${b.code}] ${b.title} (${b.selectionCount}개 선택, ${b.required ? "필수" : "선택"})\n${opts}`;
   });
 
   return `[선택형 혜택 목록]\n${lines.join("\n\n")}`;
