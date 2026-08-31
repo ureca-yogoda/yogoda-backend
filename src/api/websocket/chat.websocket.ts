@@ -94,8 +94,13 @@ function isUiEventAction(value: unknown): value is UiEventAction {
   );
 }
 
-async function sendTypedText(socket: Socket, text: string) {
+async function sendTypedText(
+  socket: Socket,
+  text: string,
+  isStopped: () => boolean,
+) {
   for (let i = 0; i < text.length; i += TYPE_CHUNK_SIZE) {
+    if (isStopped()) return;
     socket.emit("chunk", text.slice(i, i + TYPE_CHUNK_SIZE));
     await new Promise((resolve) => setTimeout(resolve, TYPE_CHUNK_DELAY_MS));
   }
@@ -159,6 +164,10 @@ export function setupChatSocket(io: Server) {
     let collectedInfo: SurveyAnswers | undefined;
     let signupCollectedData: Record<string, unknown> | undefined;
     let previousInteractionId: string | undefined;
+    // 진행 중인 AI 응답을 식별하는 id. "stop" 이벤트가 오면 stoppedRequestId에
+    // 현재 요청 id를 기록해, 그 요청에 속한 이후의 emit/DB 처리를 모두 건너뜀
+    let activeRequestId: string | null = null;
+    let stoppedRequestId: string | null = null;
 
     const sessionReady = (async () => {
       const { session } = await resolveChatSession(userId, sessionId);
@@ -192,6 +201,12 @@ export function setupChatSocket(io: Server) {
         socket.emit("error", "메시지가 유효하지 않습니다.");
         return;
       }
+
+      // 이번 요청을 식별할 id를 발급함. "stop" 이벤트는 이 id를 stoppedRequestId에
+      // 기록하므로, 이후 코드는 requestId === stoppedRequestId 여부로 중단 여부를 판단함
+      const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      activeRequestId = requestId;
+      const isStopped = () => stoppedRequestId === requestId;
 
       if (simulateError) {
         socket.emit("error", "시뮬레이션 에러가 발생했습니다.");
@@ -295,6 +310,13 @@ export function setupChatSocket(io: Server) {
               })),
           });
 
+          // 응답을 받아온 시점에 이미 정지됐다면 DB 저장·세션 상태 갱신 없이 버림
+          // (저장해버리면 새로고침 시 정지했던 턴이 되살아나고 다음 메시지도 그
+          // 문맥을 이어받음)
+          if (isStopped()) {
+            return;
+          }
+
           await saveMessage(currentSessionId, "ai", decision.message);
 
           // 카드 타입 메시지 DB 저장 (재접속/관리자 열람 시 복원용)
@@ -349,12 +371,18 @@ export function setupChatSocket(io: Server) {
           await recordConversionEvent(currentSessionId, "signup_started");
 
           // 프론트에 현재 signup 단계 알림
-          socket.emit("signup", {
-            signupStep: decision.signupStep,
-            signupData: decision.signupData,
-          });
+          if (!isStopped()) {
+            socket.emit("signup", {
+              signupStep: decision.signupStep,
+              signupData: decision.signupData,
+            });
+          }
 
-          await sendTypedText(socket, decision.message);
+          await sendTypedText(socket, decision.message, isStopped);
+
+          if (isStopped()) {
+            return;
+          }
 
           if (decision.quickReplies?.length) {
             socket.emit("quickReplies", decision.quickReplies);
@@ -435,7 +463,9 @@ export function setupChatSocket(io: Server) {
             }
           }
 
-          socket.emit("done");
+          if (!isStopped()) {
+            socket.emit("done");
+          }
           return;
         }
 
@@ -452,6 +482,11 @@ export function setupChatSocket(io: Server) {
           promptContent,
           currentPlanCode: currentPlan?.planCode ?? null,
         });
+
+        // 응답을 받아온 시점에 이미 정지됐다면 DB 저장·세션 상태 갱신 없이 버림
+        if (isStopped()) {
+          return;
+        }
 
         let cards: ReturnType<typeof buildPlanCards> = [];
         if (
@@ -481,7 +516,11 @@ export function setupChatSocket(io: Server) {
           socket.emit("info", decision.collectedInfo);
         }
 
-        await sendTypedText(socket, decision.message);
+        await sendTypedText(socket, decision.message, isStopped);
+
+        if (isStopped()) {
+          return;
+        }
 
         if (cards.length > 0) {
           socket.emit("plans", cards);
@@ -495,6 +534,16 @@ export function setupChatSocket(io: Server) {
       } catch (aiError) {
         console.error("AI 채팅 처리 에러:", aiError);
         socket.emit("error", "AI 서버 연결에 실패했습니다.");
+      }
+    });
+
+    // 클라이언트가 "정지" 버튼을 눌렀을 때 호출됨. 현재 처리 중인 요청의 id를
+    // stoppedRequestId에 기록해, 그 요청에 대한 이후의 DB 저장·세션 상태 갱신과
+    // chunk/plans/quickReplies/signup/signup_complete/done emit을 모두 건너뛰게 함.
+    // 단, 이미 진행 중인 AI API 호출 자체는 중간에 끊을 수 없어 끝까지 기다린 뒤 버림.
+    socket.on("stop", () => {
+      if (activeRequestId) {
+        stoppedRequestId = activeRequestId;
       }
     });
 
