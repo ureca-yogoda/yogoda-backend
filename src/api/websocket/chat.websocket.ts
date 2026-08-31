@@ -36,6 +36,7 @@ import type {
   SurveyAnswers,
   SurveyContext,
   SignupCollectedData,
+  SignupStep,
 } from "../../types/chat.js";
 
 const TYPE_CHUNK_SIZE = 8;
@@ -138,6 +139,7 @@ function getThinkingMessage(
     const map: Record<string, string> = {
       fraud_warning: "개통 안내를 준비하고 있어요",
       terms_agreement: "약관 내용을 불러오고 있어요",
+      identity_verification: "본인인증 결과를 확인하고 있어요",
       collect_info: "입력하신 정보를 확인하고 있어요",
       select_benefits: "혜택 옵션을 정리하고 있어요",
       select_payment: "납부 방법을 확인하고 있어요",
@@ -323,19 +325,34 @@ export function setupChatSocket(io: Server) {
             return;
           }
 
-          // 약관 동의(terms_agreement) 단계는 프론트의 "다음" 버튼(고정 문구
-          // "동의합니다"로 시작하는 메시지)을 통해서만 다음 단계로 넘어가야 함. 애매한
-          // 자유 텍스트("음" 등)를 AI가 동의 의사로 오판해 넘겨버리는 걸 막기 위해
-          // 결정론적으로 검증함. 그 사이에 다른 질문을 하면 AI의 답변은 그대로 쓰되,
-          // 단계만 약관 동의로 되돌리고 안내 문구를 덧붙임
-          const isAgreeMessage = message.trim().startsWith("동의합니다");
+          // 약관 동의/본인인증처럼 지정된 UI(버튼·모달)를 통해서만 다음 단계로
+          // 넘어가야 하는 단계들. 애매한 자유 텍스트("음" 등)를 AI가 완료 의사로
+          // 오판해 넘겨버리는 걸 막기 위해 결정론적으로 검증함. 정해진 문구로
+          // 시작하는 메시지가 아니면, 그 사이 다른 질문에 대한 AI의 답변은 그대로
+          // 쓰되 단계만 되돌리고 안내 문구를 덧붙임
+          const GATED_SIGNUP_STEPS: Record<
+            string,
+            { triggerPrefix: string; nudge: string }
+          > = {
+            terms_agreement: {
+              triggerPrefix: "동의합니다",
+              nudge: "위 약관에 모두 동의하신 뒤 **다음** 버튼을 눌러주세요.",
+            },
+            identity_verification: {
+              triggerPrefix: "본인인증 완료",
+              nudge: "휴대폰 본인인증을 완료해 주세요.",
+            },
+          };
+          const gate = currentSignupStep
+            ? GATED_SIGNUP_STEPS[currentSignupStep]
+            : undefined;
           if (
-            currentSignupStep === "terms_agreement" &&
-            decision.signupStep !== "terms_agreement" &&
-            !isAgreeMessage
+            gate &&
+            decision.signupStep !== currentSignupStep &&
+            !message.trim().startsWith(gate.triggerPrefix)
           ) {
-            decision.signupStep = "terms_agreement";
-            decision.message = `${decision.message}\n\n계속해서 가입을 진행할까요? 위 약관에 모두 동의하신 뒤 **다음** 버튼을 눌러주세요.`;
+            decision.signupStep = currentSignupStep as SignupStep;
+            decision.message = `${decision.message}\n\n계속해서 가입을 진행할까요? ${gate.nudge}`;
           }
 
           await saveMessage(currentSessionId, "ai", decision.message);
@@ -360,6 +377,17 @@ export function setupChatSocket(io: Server) {
 
           if (isNewSignupStep && decision.signupStep === "terms_agreement") {
             await saveMessage(currentSessionId, "ai", "", undefined, "terms");
+          } else if (
+            isNewSignupStep &&
+            decision.signupStep === "identity_verification"
+          ) {
+            await saveMessage(
+              currentSessionId,
+              "ai",
+              "",
+              undefined,
+              "identity_verification",
+            );
           } else if (
             isNewSignupStep &&
             decision.signupStep === "fraud_warning"

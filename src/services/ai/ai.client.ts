@@ -435,6 +435,8 @@ const SIGNUP_DATA_SCHEMA = {
   properties: {
     fraudWarningAcknowledged: { type: "boolean" },
     agreedToTerms: { type: "boolean" },
+    identityVerified: { type: "boolean" },
+    phoneNumber: { type: "string" },
     name: { type: "string" },
     birth: { type: "string" },
     selectedBenefits: { type: "object" },
@@ -454,6 +456,7 @@ const SIGNUP_RESPONSE_SCHEMA = {
       enum: [
         "fraud_warning",
         "terms_agreement",
+        "identity_verification",
         "collect_info",
         "select_benefits",
         "select_payment",

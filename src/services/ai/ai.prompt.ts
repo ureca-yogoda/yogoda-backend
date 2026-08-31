@@ -211,25 +211,32 @@ export const SIGNUP_PROMPT_SECTION = `
                      quickReplies: ["확인했어요"]
 2. terms_agreement : LG U+ 서비스 이용약관 및 개인정보 수집·이용에 동의를 받습니다.
                      quickReplies: ["전체 동의합니다"]
-3. collect_info    : 본인 확인을 위해 이름과 생년월일(8자리)을 순서대로 수집합니다.
+3. identity_verification : 휴대폰 본인인증을 진행합니다. 이 단계는 채팅이 아니라 별도
+                     인증 화면(모달)으로 처리되므로, message에는 "휴대폰 본인인증을
+                     진행해 주세요" 같은 간단한 안내만 담고, 전화번호나 인증번호를
+                     채팅으로 묻지 마세요. quickReplies는 빈 배열([])로 두세요.
+                     사용자가 인증을 마치면 "본인인증 완료"로 시작하는 메시지가 오며,
+                     이때 signupData.identityVerified를 true로, phoneNumber도 함께
+                     기록한 뒤 다음 단계로 넘어가세요.
+4. collect_info    : 본인 확인을 위해 이름과 생년월일(8자리)을 순서대로 수집합니다.
                      이름을 먼저 묻고, 답변 후 생년월일을 묻습니다.
                      (두 값이 모두 유효하게 모이면 다음 단계로 넘어가세요)
                      [입력 검증 - 매우 중요]
                      - 이름: 2자 이상의 한글 이름이어야 합니다. 그 외 입력은 재질문하세요.
                      - 생년월일: 반드시 8자리 숫자(YYYYMMDD 형식)여야 합니다. 7자리 이하, 9자리 이상, 숫자가 아닌 경우 모두 재질문하세요.
                      - 검증 실패 시: signupStep을 "collect_info"로 유지하고, quickReplies는 빈 배열([])로 두세요. 다음 단계의 quickReplies를 절대 미리 내리지 마세요.
-4. select_benefits : 요금제에 선택형 혜택이 있는 경우에만 진행합니다.
+5. select_benefits : 요금제에 선택형 혜택이 있는 경우에만 진행합니다.
                      혜택이 없으면 이 단계를 건너뛰세요.
                      사용자가 혜택을 선택하면 signupData.selectedBenefits에
                      { "[stepCode]": ["optionCode"] } 형식으로 저장하세요. (혜택 목록의 stepCode와 optionCode를 그대로 사용할 것)
-5. select_payment  : 요금 납부 방법을 선택받습니다.
+6. select_payment  : 요금 납부 방법을 선택받습니다.
                      quickReplies: ["계좌이체", "신용카드", "카카오페이", "네이버페이", "토스"]
-6. final_confirm   : 수집된 정보는 별도 카드로 자동 표시됩니다.
+7. final_confirm   : 수집된 정보는 별도 카드로 자동 표시됩니다.
                      message에 이름·생년월일·납부방법 등 수집 정보를 절대 나열하지 마세요. (성함, 납부 방법 등 언급 금지)
                      message 예시: "아래 정보를 확인하시고, 맞으시면 채팅으로 '가입 신청하기'라고 보내주세요."
                      버튼 클릭 안내(예: "버튼을 눌러주세요") 절대 금지 — 반드시 채팅으로 전송 안내만 하세요.
                      quickReplies: ["가입 신청하기", "처음부터 다시"]
-7. completed       : 가입이 완료됐음을 알리는 메시지를 보냅니다.
+8. completed       : 가입이 완료됐음을 알리는 메시지를 보냅니다.
                      이름은 message에 언급하되, 주민번호·생년월일 등 민감 정보는 절대 반복하지 마세요.
 
 [signupData 응답 규칙]
@@ -242,6 +249,8 @@ export const SIGNUP_PROMPT_SECTION = `
   - 생년월일 → birth (8자리 숫자 문자열, 예: "19900101")
   - 납부 방법 → paymentMethod (문자열)
   - 사기 안내 확인 → fraudWarningAcknowledged (boolean)
+  - 본인인증 완료 → identityVerified (boolean)
+  - 인증한 휴대폰 번호 → phoneNumber (문자열)
   - 선택 혜택 → selectedBenefits (객체: { [stepCode]: [optionCode 배열] })
     예: { "ott": ["netflix_standard_ad"] }
 - signupData는 매 응답마다 지금까지 수집된 모든 필드를 빠짐없이 포함하세요.
