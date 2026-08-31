@@ -49,6 +49,10 @@ interface ChatMessagePayload {
   preselectedPlanCode?: string;
   isKickoff?: boolean;
   signupCollectedData?: SignupCollectedData;
+  // 이번 메시지를 보내기 직전, 프론트가 알고 있던 가입 단계. 약관 동의처럼
+  // 지정된 버튼으로만 다음 단계로 넘어가야 하는 단계를 서버가 결정론적으로
+  // 지키기 위한 기준값으로 사용함 (AI 판단만으로는 애매한 텍스트도 동의로 오판할 수 있음)
+  currentSignupStep?: string;
 }
 
 interface ChatSocketAuth {
@@ -200,6 +204,7 @@ export function setupChatSocket(io: Server) {
         preselectedPlanCode,
         isKickoff = false,
         signupCollectedData: clientSignupData,
+        currentSignupStep,
       } = payload;
 
       if (!message || message.trim() === "") {
@@ -240,11 +245,7 @@ export function setupChatSocket(io: Server) {
         }
 
         // AI 호출 전에 즉시 로딩 문구를 전송해 체감 대기 시간을 줄임
-        const currentStep = signupCollectedData
-          ? ((signupCollectedData as Record<string, unknown>).signupStep as
-              string | undefined)
-          : undefined;
-        socket.emit("thinking", getThinkingMessage(message, currentStep));
+        socket.emit("thinking", getThinkingMessage(message, currentSignupStep));
 
         // ── 가입 플로우 분기 ──────────────────────────────────────────────────
         if (preselectedPlanCode) {
@@ -322,6 +323,21 @@ export function setupChatSocket(io: Server) {
             return;
           }
 
+          // 약관 동의(terms_agreement) 단계는 프론트의 "다음" 버튼(고정 문구
+          // "동의합니다"로 시작하는 메시지)을 통해서만 다음 단계로 넘어가야 함. 애매한
+          // 자유 텍스트("음" 등)를 AI가 동의 의사로 오판해 넘겨버리는 걸 막기 위해
+          // 결정론적으로 검증함. 그 사이에 다른 질문을 하면 AI의 답변은 그대로 쓰되,
+          // 단계만 약관 동의로 되돌리고 안내 문구를 덧붙임
+          const isAgreeMessage = message.trim().startsWith("동의합니다");
+          if (
+            currentSignupStep === "terms_agreement" &&
+            decision.signupStep !== "terms_agreement" &&
+            !isAgreeMessage
+          ) {
+            decision.signupStep = "terms_agreement";
+            decision.message = `${decision.message}\n\n계속해서 가입을 진행할까요? 위 약관에 모두 동의하신 뒤 **다음** 버튼을 눌러주세요.`;
+          }
+
           await saveMessage(currentSessionId, "ai", decision.message);
 
           // 카드 타입 메시지 DB 저장 (재접속/관리자 열람 시 복원용)
@@ -337,9 +353,17 @@ export function setupChatSocket(io: Server) {
               : {}),
           };
 
-          if (decision.signupStep === "terms_agreement") {
+          // 단계가 실제로 바뀐 턴에서만 카드를 저장함. 같은 단계에 머무는 동안
+          // (예: 약관 동의 중 다른 질문을 하는 경우) 매번 카드를 다시 저장하면
+          // 대화에 같은 카드가 중복으로 쌓임
+          const isNewSignupStep = decision.signupStep !== currentSignupStep;
+
+          if (isNewSignupStep && decision.signupStep === "terms_agreement") {
             await saveMessage(currentSessionId, "ai", "", undefined, "terms");
-          } else if (decision.signupStep === "fraud_warning") {
+          } else if (
+            isNewSignupStep &&
+            decision.signupStep === "fraud_warning"
+          ) {
             await saveMessage(
               currentSessionId,
               "ai",
@@ -347,7 +371,10 @@ export function setupChatSocket(io: Server) {
               undefined,
               "fraud_warning",
             );
-          } else if (decision.signupStep === "final_confirm") {
+          } else if (
+            isNewSignupStep &&
+            decision.signupStep === "final_confirm"
+          ) {
             await saveMessage(
               currentSessionId,
               "ai",
