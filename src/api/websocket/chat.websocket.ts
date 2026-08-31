@@ -61,6 +61,11 @@ interface ConversionEventPayload {
   event?: string;
 }
 
+interface SignupEntryPayload {
+  text?: string;
+  planCode?: string;
+}
+
 function isFunnelStage(value: unknown): value is ChatSessionFunnelStage {
   return (
     typeof value === "string" && (FUNNEL_STAGES as string[]).includes(value)
@@ -370,19 +375,18 @@ export function setupChatSocket(io: Server) {
           // 가입 단계 퍼널 기록
           await recordConversionEvent(currentSessionId, "signup_started");
 
-          // 프론트에 현재 signup 단계 알림
-          if (!isStopped()) {
-            socket.emit("signup", {
-              signupStep: decision.signupStep,
-              signupData: decision.signupData,
-            });
-          }
-
           await sendTypedText(socket, decision.message, isStopped);
 
           if (isStopped()) {
             return;
           }
+
+          // 프론트에 현재 signup 단계 알림. 텍스트 스트림이 다 끝난 뒤에 보내야
+          // 약관동의/사기경고/최종확인 카드가 채팅 답변보다 먼저 뜨지 않음
+          socket.emit("signup", {
+            signupStep: decision.signupStep,
+            signupData: decision.signupData,
+          });
 
           if (decision.quickReplies?.length) {
             socket.emit("quickReplies", decision.quickReplies);
@@ -544,6 +548,27 @@ export function setupChatSocket(io: Server) {
     socket.on("stop", () => {
       if (activeRequestId) {
         stoppedRequestId = activeRequestId;
+      }
+    });
+
+    // 가입 플로우 진입 시 프론트가 화면에 즉시 보여준 안내 문구를 그대로 DB에
+    // 저장함. LLM 호출 없이 텍스트를 그대로 기록만 하므로, AI 응답처럼 스트리밍
+    // 하거나 별도 이벤트로 되돌려줄 필요가 없음(프론트가 이미 낙관적으로 렌더링함).
+    socket.on("signup_entry", async (payload: SignupEntryPayload) => {
+      const text = payload.text?.trim();
+      if (!text) return;
+      try {
+        await sessionReady;
+        await saveMessage(
+          currentSessionId,
+          "ai",
+          text,
+          undefined,
+          "signup_entry",
+          payload.planCode ? { planCode: payload.planCode } : undefined,
+        );
+      } catch (err) {
+        console.error("가입 인삿말 저장 에러:", err);
       }
     });
 
