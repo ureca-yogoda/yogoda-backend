@@ -15,7 +15,7 @@ import {
   type DateRange,
   type StatsPeriod,
 } from "../utils/stats.js";
-import { getPromptHistory } from "./prompt.service.js";
+import { getAllPromptVersionsSorted } from "./prompt.service.js";
 
 // 관리자 화면은 "종료된" 세션만 다룸 (세션 목록/상세와 동일한 기준)
 async function countSessions(
@@ -109,7 +109,7 @@ export const getDashboard = async (
   }
 
   // 버전별 전환율은 프롬프트 히스토리 계산을 그대로 재사용함 (기간과 무관한 버전 누적 실적)
-  const { versions } = await getPromptHistory();
+  const versions = await getAllPromptVersionsSorted();
   const promptConversion = versions
     .map((version) => ({
       version: version.version,

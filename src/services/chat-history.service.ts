@@ -222,11 +222,23 @@ export async function recordConversionEvent(
 /**
  * 소켓 연결이 끊길 때, 아직 판정되지 않은(status: null) 세션의 status를
  * last_stage 기준으로 확정합니다. 이미 확정된 세션은 건드리지 않습니다.
+ * 메시지를 한 건도 주고받지 않은 세션(채팅창만 열었다 닫은 경우)은 실제
+ * 상담으로 볼 수 없으므로 세션 자체를 삭제합니다. (ui_events는 세션 status와
+ * 무관하게 독립적으로 집계되므로 영향 없음)
  */
 export async function finalizeSessionStatus(sessionId: string) {
   const session =
     await ChatSessionModel.findById(sessionId).select("status last_stage");
   if (!session || session.status !== null) return;
+
+  const hasMessages = await ChatMessageModel.exists({
+    session_id: sessionId,
+  });
+
+  if (!hasMessages) {
+    await ChatSessionModel.deleteOne({ _id: sessionId });
+    return;
+  }
 
   session.status =
     session.last_stage === "signup_completed" ? "completed" : "dropped";
