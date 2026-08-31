@@ -4,6 +4,7 @@ import {
   applyDemoUsageScenario,
   type DemoUsageScenario,
   getMyUsageReport,
+  getMyUsageRecommendation,
 } from "../../services/usage.service.js";
 
 const scenarios: DemoUsageScenario[] = ["baseline", "usage-drop"];
@@ -15,6 +16,18 @@ export async function getMyUsageReportHandler(
 ) {
   try {
     res.status(200).json(await getMyUsageReport(req.user!.userId));
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getMyUsageRecommendationHandler(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    res.status(200).json(await getMyUsageRecommendation(req.user!.userId));
   } catch (error) {
     next(error);
   }

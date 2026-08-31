@@ -376,24 +376,24 @@ export function setupChatSocket(io: Server) {
             });
 
             try {
-              await subscribeUserToPlan({
-                userId,
-                planCode: preselectedPlanCode,
-                selectedOptions: selectedBenefits,
-                paymentMethod,
-              });
+              try {
+                await subscribeUserToPlan({
+                  userId,
+                  planCode: preselectedPlanCode,
+                  selectedOptions: selectedBenefits,
+                  paymentMethod,
+                });
+              } catch (subscribeError) {
+                // DB 반영 직후 연결이 끊겨 완료 이벤트만 유실된 경우의 재시도는
+                // 이미 같은 요금제를 이용 중이면 성공으로 간주합니다.
+                const currentPlan = await getCurrentPlan(userId);
+                if (currentPlan?.planCode !== preselectedPlanCode) {
+                  throw subscribeError;
+                }
+              }
 
-              await recordConversionEvent(currentSessionId, "signup_completed");
-
-              // signup_complete 카드 DB 저장
-              await saveMessage(
-                currentSessionId,
-                "ai",
-                "",
-                undefined,
-                "signup_complete",
-              );
-
+              // 요금제 변경 자체가 성공하면 즉시 완료 화면을 표시합니다.
+              // 퍼널/대화 기록 실패가 실제 가입 성공을 UI 오류로 뒤집으면 안 됩니다.
               socket.emit("signup_complete", {
                 planCode: preselectedPlanCode,
                 planName: plan.name,
@@ -401,9 +401,29 @@ export function setupChatSocket(io: Server) {
                 paymentMethod,
               });
 
-              // 가입 완료 후 signupData 초기화 (재가입 시 정보 재수집을 위해)
-              signupCollectedData = undefined;
-              await updateSignupCollectedData(currentSessionId, {});
+              try {
+                await recordConversionEvent(
+                  currentSessionId,
+                  "signup_completed",
+                );
+
+                // signup_complete 카드 DB 저장
+                await saveMessage(
+                  currentSessionId,
+                  "ai",
+                  "",
+                  undefined,
+                  "signup_complete",
+                  undefined,
+                  planSnapshot,
+                );
+
+                // 가입 완료 후 signupData 초기화 (재가입 시 정보 재수집을 위해)
+                signupCollectedData = undefined;
+                await updateSignupCollectedData(currentSessionId, {});
+              } catch (postSignupError) {
+                console.error("가입 완료 후 기록 처리 에러:", postSignupError);
+              }
 
               console.log(
                 `✅ 가입 완료: userId=${userId}, plan=${preselectedPlanCode}`,

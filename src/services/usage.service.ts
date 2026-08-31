@@ -5,8 +5,29 @@ import { UserUsageSummaryModel } from "../models/user-usage-summary.model.js";
 import { AppError } from "../utils/AppError.js";
 import { env } from "../core/config/env.js";
 import { addMySubscription } from "./subscription.service.js";
+import {
+  recommendPlanFromUsageWithAI,
+  type UsageRecommendationDecision,
+} from "./ai/ai.client.js";
 
 export type DemoUsageScenario = "baseline" | "usage-drop";
+
+export interface UsageReport {
+  source: "demo";
+  scenario: DemoUsageScenario;
+  period: string;
+  dataUsed: number;
+  dataLimit: number;
+  callMinutes: number;
+  subscriptionCount: number;
+  monthlyFee: number;
+  history: Array<{ month: string; amount: number }>;
+  averageUsage: number;
+  recentAverage: number;
+  previousAverage: number;
+  changeRate: number;
+  activeOttCount: number;
+}
 
 const scenarioUsage = {
   baseline: [
@@ -45,11 +66,115 @@ async function getUserPlan(userId: string) {
   }
 
   const plan = await PlanModel.findById(user.current_plan_id)
-    .select("name monthly_fee discount_fee data")
+    .select("code name monthly_fee discount_fee data")
     .lean();
   if (!plan) throw new AppError(404, "현재 요금제를 찾을 수 없어요.");
 
   return { user, plan };
+}
+
+export async function getMyUsageRecommendation(userId: string) {
+  const [{ plan }, report] = await Promise.all([
+    getUserPlan(userId),
+    getMyUsageReport(userId),
+  ]);
+  const currentMonthlyFee = plan.discount_fee ?? plan.monthly_fee;
+  const requiredDataGb = report.recentAverage * 1.15;
+  const plans = await PlanModel.find({
+    is_active: true,
+    _id: { $ne: plan._id },
+  })
+    .select("code name monthly_fee discount_fee data tags recommendation_tags")
+    .lean();
+  const candidates = plans
+    .filter((candidate) => {
+      const monthlyFee = candidate.discount_fee ?? candidate.monthly_fee;
+      const amountGb =
+        candidate.data.amount_mb === null
+          ? null
+          : candidate.data.amount_mb / 1024;
+      return (
+        monthlyFee < currentMonthlyFee &&
+        (amountGb === null || amountGb >= requiredDataGb)
+      );
+    })
+    .map((candidate) => ({
+      code: candidate.code,
+      name: candidate.name,
+      monthlyFee: candidate.discount_fee ?? candidate.monthly_fee,
+      dataDisplay: candidate.data.display,
+      tags: [...candidate.tags, ...candidate.recommendation_tags],
+    }))
+    .sort((a, b) => a.monthlyFee - b.monthlyFee)
+    .slice(0, 5);
+
+  if (candidates.length === 0) {
+    return {
+      status: "keep-current" as const,
+      headline: "현재 요금제가 가장 적합해요",
+      reason:
+        "최근 사용량을 안정적으로 제공하면서 더 저렴한 요금제를 찾지 못했어요.",
+      currentPlan: {
+        code: plan.code,
+        name: plan.name,
+        monthlyFee: currentMonthlyFee,
+      },
+      recommendedPlan: null,
+      monthlySavings: 0,
+      analysisSource: "rules" as const,
+    };
+  }
+
+  let decision: UsageRecommendationDecision;
+  let analysisSource: "ai" | "rules" = "ai";
+  try {
+    decision = await recommendPlanFromUsageWithAI({
+      currentPlanName: plan.name,
+      currentMonthlyFee,
+      recentAverageGb: report.recentAverage,
+      previousAverageGb: report.previousAverage,
+      changeRate: report.changeRate,
+      activeOttCount: report.activeOttCount,
+      candidates,
+    });
+    if (
+      !candidates.some((candidate) => candidate.code === decision.selectedCode)
+    ) {
+      throw new Error("AI_RECOMMENDATION_OUTSIDE_CANDIDATES");
+    }
+  } catch (error) {
+    console.error("사용량 기반 AI 재추천 실패, 규칙 추천으로 대체:", error);
+    analysisSource = "rules";
+    decision = {
+      selectedCode: candidates[0].code,
+      headline: "달라진 사용량에 맞는 요금제예요",
+      reason:
+        "최근 평균 사용량에 여유를 더해도 충분하며 현재 요금제보다 월 요금이 낮아요.",
+    };
+  }
+  const selected = candidates.find(
+    (candidate) => candidate.code === decision.selectedCode,
+  )!;
+
+  return {
+    status: "recommend-change" as const,
+    headline: decision.headline,
+    reason: decision.reason,
+    currentPlan: {
+      code: plan.code,
+      name: plan.name,
+      monthlyFee: currentMonthlyFee,
+    },
+    recommendedPlan: selected,
+    monthlySavings: currentMonthlyFee - selected.monthlyFee,
+    analysisSource,
+    evidence: {
+      recentAverageGb: report.recentAverage,
+      previousAverageGb: report.previousAverage,
+      changeRate: report.changeRate,
+      activeOttCount: report.activeOttCount,
+    },
+  };
 }
 
 async function syncDemoSubscriptions(
@@ -87,7 +212,7 @@ async function syncDemoSubscriptions(
 export async function applyDemoUsageScenario(
   userId: string,
   scenario: DemoUsageScenario,
-) {
+): Promise<UsageReport> {
   if (env.NODE_ENV === "production") {
     throw new AppError(404, "요청한 기능을 찾을 수 없어요.");
   }
@@ -126,7 +251,7 @@ export async function getMyUsageReport(
   userId: string,
   initializeDemo = true,
   appliedScenario?: DemoUsageScenario,
-) {
+): Promise<UsageReport> {
   const { plan } = await getUserPlan(userId);
   let usage = await UserUsageSummaryModel.find({ user_id: userId })
     .sort({ usage_month: -1 })

@@ -351,6 +351,83 @@ ${serializePlan(selectedPlan)}
   }
 }
 
+export interface UsageRecommendationCandidate {
+  code: string;
+  name: string;
+  monthlyFee: number;
+  dataDisplay: string;
+  tags: string[];
+}
+
+export interface UsageRecommendationDecision {
+  selectedCode: string;
+  headline: string;
+  reason: string;
+}
+
+const USAGE_RECOMMENDATION_SCHEMA = {
+  type: "object",
+  properties: {
+    selectedCode: { type: "string" },
+    headline: { type: "string" },
+    reason: { type: "string" },
+  },
+  required: ["selectedCode", "headline", "reason"],
+};
+
+export async function recommendPlanFromUsageWithAI(input: {
+  currentPlanName: string;
+  currentMonthlyFee: number;
+  recentAverageGb: number;
+  previousAverageGb: number;
+  changeRate: number;
+  activeOttCount: number;
+  candidates: UsageRecommendationCandidate[];
+}): Promise<UsageRecommendationDecision> {
+  const candidates = input.candidates
+    .map(
+      (plan) =>
+        `- ${plan.code}: ${plan.name}, 월 ${plan.monthlyFee}원, 데이터 ${plan.dataDisplay}, 태그 ${plan.tags.join(", ") || "없음"}`,
+    )
+    .join("\n");
+  const systemInstruction = `당신은 통신 요금제 사용 패턴 분석가입니다.
+현재 요금제: ${input.currentPlanName}, 월 ${input.currentMonthlyFee}원
+이전 3개월 평균: ${input.previousAverageGb}GB
+최근 3개월 평균: ${input.recentAverageGb}GB
+변화율: ${input.changeRate}%
+활성 OTT 구독: ${input.activeOttCount}개
+
+[서버가 검증한 추천 가능 후보]
+${candidates}
+
+규칙:
+- selectedCode는 반드시 위 후보 코드 중 하나만 선택하세요.
+- 사용량 감소와 구독 변화를 함께 고려하세요.
+- headline은 25자 이내, reason은 존댓말 2문장 이내로 작성하세요.
+- 절약 금액을 임의로 쓰지 마세요. 금액은 서버가 계산합니다.`;
+
+  const response = await axios({
+    method: "post",
+    url: "https://generativelanguage.googleapis.com/v1beta/interactions",
+    headers: { "x-goog-api-key": env.AI_API_KEY },
+    data: {
+      model: env.AI_MODEL,
+      input: "최근 사용 패턴에 맞는 요금제를 추천해주세요.",
+      system_instruction: systemInstruction,
+      response_format: {
+        type: "text",
+        mime_type: "application/json",
+        schema: USAGE_RECOMMENDATION_SCHEMA,
+      },
+    },
+  });
+  const steps: InteractionStep[] = response.data?.steps ?? [];
+  const rawText = steps.find((step) => step.type === "model_output")
+    ?.content?.[0]?.text;
+  if (typeof rawText !== "string") throw new Error("AI_RESPONSE_INVALID");
+  return JSON.parse(rawText) as UsageRecommendationDecision;
+}
+
 // ─── 가입 플로우 AI 결정 ────────────────────────────────────────────────────────
 
 const SIGNUP_DATA_SCHEMA = {
