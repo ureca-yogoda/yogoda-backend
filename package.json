@@ -12,6 +12,7 @@
     "migrate:chat-message-role": "tsx src/seeds/migrate-chat-message-role.ts",
     "migrate:schema-standardization": "tsx src/seeds/migrate-schema-standardization.ts",
     "cleanup:legacy-collections": "tsx src/seeds/cleanup-legacy-collections.ts",
+    "cleanup:empty-chat-sessions": "tsx src/seeds/cleanup-empty-chat-sessions.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "lint": "eslint .",
