@@ -19,6 +19,7 @@ export type ChatMessageType =
   | "fraud_warning"
   | "terms"
   | "identity_verification"
+  | "identity_verification_complete"
   | "signup_summary"
   | "signup_complete";
 
@@ -67,6 +68,7 @@ const chatMessageSchema = new Schema<IChatMessage>(
         "fraud_warning",
         "terms",
         "identity_verification",
+        "identity_verification_complete",
         "signup_summary",
         "signup_complete",
       ],

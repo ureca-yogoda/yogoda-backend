@@ -23,6 +23,12 @@ export interface IUser {
   signup_type: SignupType | null;
   payment_method: PaymentMethod | null;
 
+  // 가입 플로우 본인인증 카드에서 수집한 개인정보 (본인 확인 목적)
+  real_name: string | null;
+  birth_date: string | null;
+  phone_number: string | null;
+  identity_verified_at: Date | null;
+
   user_patterns: Record<string, unknown> | null;
   role: UserRole;
   theme: Theme;
@@ -71,6 +77,23 @@ const userSchema = new Schema<IUser>(
     payment_method: {
       type: String,
       enum: ["계좌이체", "신용카드", "카카오페이", "네이버페이", "토스"],
+      default: null,
+    },
+
+    real_name: {
+      type: String,
+      default: null,
+    },
+    birth_date: {
+      type: String,
+      default: null,
+    },
+    phone_number: {
+      type: String,
+      default: null,
+    },
+    identity_verified_at: {
+      type: Date,
       default: null,
     },
 

@@ -24,6 +24,7 @@ import {
 import {
   getCurrentPlan,
   getPlanByCode,
+  saveVerifiedIdentity,
   subscribeUserToPlan,
 } from "../../services/plan.service.js";
 import { getPromptContentByVersion } from "../../services/prompt.service.js";
@@ -51,6 +52,14 @@ interface ChatMessagePayload {
   // 지정된 버튼으로만 다음 단계로 넘어가야 하는 단계를 서버가 결정론적으로
   // 지키기 위한 기준값으로 사용함 (AI 판단만으로는 애매한 텍스트도 동의로 오판할 수 있음)
   currentSignupStep?: string;
+  // 본인 확인 카드에서 입력한 원본 값. message에는 AI가 읽을 수 있게 자연어 문장으로도
+  // 같은 내용을 담아 보내지만, DB에는 원문 대신 이 구조화된 JSON을 저장함 (나중에
+  // 필요할 때 문자열 파싱 없이 바로 가공할 수 있도록)
+  identityVerification?: {
+    name: string;
+    birth: string;
+    phoneNumber: string;
+  };
 }
 
 interface ChatSocketAuth {
@@ -125,7 +134,6 @@ function getThinkingMessage(
       fraud_warning: "개통 안내를 준비하고 있어요",
       terms_agreement: "약관 내용을 불러오고 있어요",
       identity_verification: "본인인증 결과를 확인하고 있어요",
-      collect_info: "입력하신 정보를 확인하고 있어요",
       select_benefits: "혜택 옵션을 정리하고 있어요",
       select_payment: "납부 방법을 확인하고 있어요",
       final_confirm: "가입 정보를 정리하고 있어요",
@@ -180,6 +188,11 @@ export function setupChatSocket(io: Server) {
         undefined;
       previousInteractionId = session.last_interaction_id ?? undefined;
 
+      console.log(
+        `[세션 ${currentSessionId}] 사용 중인 프롬프트 버전:`,
+        session.prompt_version,
+      );
+
       socket.emit("session_created", {
         sessionId: currentSessionId,
         promptVersion: session.prompt_version,
@@ -195,6 +208,7 @@ export function setupChatSocket(io: Server) {
         isKickoff = false,
         signupCollectedData: clientSignupData,
         currentSignupStep,
+        identityVerification,
       } = payload;
 
       if (!message || message.trim() === "") {
@@ -228,16 +242,31 @@ export function setupChatSocket(io: Server) {
         return;
       }
 
+      // 로딩 문구는 세션 조회·DB 저장(await sessionReady, saveMessage) 같은 비동기
+      // 작업을 하나도 거치지 않고, 메시지를 받자마자 동기적으로 가장 먼저 보냄.
+      // getThinkingMessage는 payload만으로 계산되므로 이 시점에 바로 알 수 있음
+      socket.emit("thinking", getThinkingMessage(message, currentSignupStep));
+
       try {
         await sessionReady;
 
         // 킥오프 메시지는 DB에 사용자 메시지로 저장하지 않음
         if (!isKickoff) {
-          await saveMessage(currentSessionId, "user", message);
+          if (identityVerification) {
+            // 이름·생년월일·휴대폰 번호가 그대로 담긴 자연어 문장 대신, 구조화된
+            // JSON(identityVerification)을 signup_data에 저장함
+            await saveMessage(
+              currentSessionId,
+              "user",
+              "",
+              undefined,
+              "identity_verification_complete",
+              identityVerification,
+            );
+          } else {
+            await saveMessage(currentSessionId, "user", message);
+          }
         }
-
-        // AI 호출 전에 즉시 로딩 문구를 전송해 체감 대기 시간을 줄임
-        socket.emit("thinking", getThinkingMessage(message, currentSignupStep));
 
         // ── 가입 플로우 분기 ──────────────────────────────────────────────────
         if (preselectedPlanCode) {
@@ -283,6 +312,57 @@ export function setupChatSocket(io: Server) {
             }
           }
 
+          // 가입 플로우의 첫 턴(프론트가 아직 어떤 단계도 받아본 적 없음)은 AI를 거치지
+          // 않고 결정론적으로 사기 예방 안내부터 바로 보냄. AI에게 맡기면 한 턴 만에
+          // 여러 단계를 한꺼번에(심지어 본인인증 완료 같은 없는 정보까지 지어내며)
+          // 건너뛰어버리는 경우가 있었음. 법적으로 반드시 보여줘야 하는 이 안내만큼은
+          // 매번 완전히 똑같은 고정 문구로 내려서 그 위험 자체를 없앰
+          if (!currentSignupStep) {
+            const fraudWarningMessage =
+              "가입을 진행하기 전에 먼저 개통 사기 예방을 위한 안내를 드릴게요.\n\n" +
+              "휴대폰·유심 개통 목적을 반드시 직접 확인하시고, 타인에게 양도하거나 " +
+              "금융 사기에 이용되는 경우 법적 책임이 발생할 수 있습니다.\n\n" +
+              "안내 내용을 확인하셨다면 아래 버튼을 누르거나, 채팅으로 확인했다고 말씀해 주세요.";
+
+            if (!isStopped()) {
+              socket.emit("chunk", fraudWarningMessage);
+            }
+            if (isStopped()) {
+              return;
+            }
+
+            await saveMessage(currentSessionId, "ai", fraudWarningMessage);
+            await saveMessage(
+              currentSessionId,
+              "ai",
+              "",
+              undefined,
+              "fraud_warning",
+            );
+
+            // 이전 대화(다른 요금제로 가입을 시도했던 이력이나 일반 상담 대화)의 AI
+            // 메모리를 여기서 끊음. 안 끊으면 그 이전 맥락(예: 이전 요금제 가입 때
+            // 이미 납부 방법까지 얘기가 오갔던 것)을 이 새 가입 시도에도 이어받아서,
+            // AI가 이번엔 실제로 진행한 적 없는 단계까지 이미 끝난 것처럼 착각함
+            previousInteractionId = undefined;
+            await updateLastInteractionId(currentSessionId, null);
+
+            await updateSignupCollectedData(
+              currentSessionId,
+              currentSignupData ?? {},
+            );
+            signupCollectedData = currentSignupData ?? {};
+            await recordConversionEvent(currentSessionId, "signup_started");
+
+            socket.emit("signup", {
+              signupStep: "fraud_warning",
+              signupData: currentSignupData ?? {},
+            });
+            socket.emit("quickReplies", ["확인했어요"]);
+            socket.emit("done");
+            return;
+          }
+
           const { decision, interactionId } = await getSignupDecision(
             {
               message,
@@ -326,11 +406,16 @@ export function setupChatSocket(io: Server) {
             return;
           }
 
+          // (가입 플로우 첫 턴은 위에서 AI 호출 없이 이미 처리되고 return되므로, 이
+          // 아래는 항상 currentSignupStep이 있는 이후 턴에서만 실행됨)
+
           // 약관 동의/본인인증처럼 지정된 UI(버튼·모달)를 통해서만 다음 단계로
           // 넘어가야 하는 단계들. 애매한 자유 텍스트("음" 등)를 AI가 완료 의사로
           // 오판해 넘겨버리는 걸 막기 위해 결정론적으로 검증함. 정해진 문구로
           // 시작하는 메시지가 아니면, 그 사이 다른 질문에 대한 AI의 답변은 그대로
-          // 쓰되 단계만 되돌리고 안내 문구를 덧붙임
+          // 쓰되 단계만 되돌리고 안내 문구를 덧붙임.
+          // fraud_warning은 여기 포함하지 않음 — 버튼/고정 문구가 아니라 AI가 자유
+          // 텍스트의 긍정/부정 의미를 직접 판단해서 진행 여부를 결정해야 하는 단계라서
           const GATED_SIGNUP_STEPS: Record<
             string,
             { triggerPrefix: string; nudge: string }
@@ -341,7 +426,8 @@ export function setupChatSocket(io: Server) {
             },
             identity_verification: {
               triggerPrefix: "본인인증 완료",
-              nudge: "휴대폰 본인인증을 완료해 주세요.",
+              nudge:
+                "카드에 이름·생년월일·휴대폰 번호를 입력하고 본인인증을 완료해 주세요.",
             },
           };
           const gate = currentSignupStep
@@ -353,7 +439,15 @@ export function setupChatSocket(io: Server) {
             !message.trim().startsWith(gate.triggerPrefix)
           ) {
             decision.signupStep = currentSignupStep as SignupStep;
-            decision.message = `${decision.message}\n\n계속해서 가입을 진행할까요? ${gate.nudge}`;
+            const nudgeText = `\n\n계속해서 가입을 진행할까요? ${gate.nudge}`;
+            decision.message = `${decision.message}${nudgeText}`;
+            // 원래 답변 텍스트는 이미 1차 스트리밍으로 화면에 다 전송된 뒤라, 여기서
+            // signupStep만 조용히 되돌리면 화면(진행된 것처럼 보이는 문구)과 실제 상태
+            // (이전 단계에 머묾)가 어긋나 사용자가 멈춘 이유를 알 수 없게 됨. 같은
+            // 말풍선에 교정 안내를 실시간으로 이어붙여 화면과 실제 상태를 일치시킴
+            if (!isStopped()) {
+              socket.emit("chunk", nudgeText);
+            }
           }
 
           await saveMessage(currentSessionId, "ai", decision.message);
@@ -413,6 +507,31 @@ export function setupChatSocket(io: Server) {
               mergedSignupData,
               planSnapshot,
             );
+          }
+
+          // 본인인증 카드 단계를 막 벗어났다면, 최종 가입 완료를 기다리지 않고
+          // 이름·생년월일·휴대폰 번호를 바로 유저 문서에 저장함 (중간 이탈해도 남도록)
+          if (
+            userId &&
+            currentSignupStep === "identity_verification" &&
+            decision.signupStep !== "identity_verification"
+          ) {
+            const name = mergedSignupData.name as string | undefined;
+            const birth = mergedSignupData.birth as string | undefined;
+            const phoneNumber = mergedSignupData.phoneNumber as
+              string | undefined;
+            if (name && birth && phoneNumber) {
+              try {
+                await saveVerifiedIdentity({
+                  userId,
+                  name,
+                  birth,
+                  phoneNumber,
+                });
+              } catch (err) {
+                console.error("본인인증 정보 저장 실패:", err);
+              }
+            }
           }
 
           // signupData 세션에 누적 저장

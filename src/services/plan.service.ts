@@ -498,3 +498,33 @@ export const subscribeUserToPlan = async ({
     paymentMethod,
   };
 };
+
+export interface SaveVerifiedIdentityParams {
+  userId: string;
+  name: string;
+  birth: string;
+  phoneNumber: string;
+}
+
+/**
+ * 가입 플로우의 본인인증 카드에서 이름·생년월일·휴대폰 번호 인증이 끝나면
+ * 즉시 호출합니다. 최종 가입 완료를 기다리지 않고 바로 유저 문서에 저장해서,
+ * 이후 단계(혜택 선택 등)에서 이탈해도 확인한 개인정보는 남습니다.
+ */
+export const saveVerifiedIdentity = async ({
+  userId,
+  name,
+  birth,
+  phoneNumber,
+}: SaveVerifiedIdentityParams): Promise<void> => {
+  const updated = await UserModel.findByIdAndUpdate(userId, {
+    $set: {
+      real_name: name,
+      birth_date: birth,
+      phone_number: phoneNumber,
+      identity_verified_at: new Date(),
+    },
+  });
+
+  if (!updated) throw new AppError(404, "유저를 찾을 수 없어요.");
+};
