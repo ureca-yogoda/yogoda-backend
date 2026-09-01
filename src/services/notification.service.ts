@@ -231,6 +231,20 @@ export async function markNotificationAsRead(
 }
 
 /**
+ * 유저의 안 읽은 알림을 전부 읽음 처리합니다. getNotifications는 최신 10개만
+ * 반환하지만, 여기는 페이지네이션 없이 DB에서 바로 조건에 맞는 모든 문서를
+ * 갱신합니다 — 프론트가 화면에 보이는 항목만 개별로 읽음 처리하면, 10개보다
+ * 많이 쌓인 유저는 뒤에 남은 알림이 계속 안 읽음으로 남아 종 아이콘 배지가
+ * 다시 나타나는 문제가 있었습니다.
+ */
+export async function markAllNotificationsAsRead(userId: string) {
+  await NotificationModel.updateMany(
+    { user_id: userId, read_at: null },
+    { $set: { read_at: new Date() } },
+  );
+}
+
+/**
  * 알림 하나를 삭제합니다. 다른 유저의 알림은 건드리지 않도록 user_id도 함께 조건에 넣습니다.
  */
 export async function removeNotification(

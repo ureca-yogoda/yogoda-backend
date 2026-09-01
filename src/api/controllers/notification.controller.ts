@@ -4,6 +4,7 @@ import {
   getNotifications,
   getUnreadNotificationCount,
   markNotificationAsRead,
+  markAllNotificationsAsRead,
   removeNotification,
 } from "../../services/notification.service.js";
 
@@ -48,6 +49,25 @@ export async function readNotification(
     await markNotificationAsRead(userId, notificationId);
 
     res.status(200).json({ message: "알림을 읽음 처리했어요." });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * 안 읽은 알림을 전부 읽음 처리합니다.
+ */
+export async function readAllNotifications(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const userId = req.user!.userId;
+
+    await markAllNotificationsAsRead(userId);
+
+    res.status(200).json({ message: "모든 알림을 읽음 처리했어요." });
   } catch (error) {
     next(error);
   }
