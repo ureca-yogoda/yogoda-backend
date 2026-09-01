@@ -199,34 +199,50 @@ function createDelimiterFilteredOnChunk(onChunk: (text: string) => void) {
 }
 
 /*
- * 가입 플로우의 message_only 호출은 "JSON을 절대 쓰지 말라"고 프롬프트로 명시했는데도,
- * 모델이 답변 뒤에 { "action": "signup", ... } 같은 메타데이터 JSON을 그대로 이어붙여
- * 쓰는 경우가 있었음(실제 signupStep 판단은 어차피 이 JSON이 아니라 별도 2차 메타데이터
- * 호출로 하므로, 이 JSON은 화면에 노출되기만 하는 순수 부작용). "{" 뒤에 정확히
- * "action" 필드가 이어지는 패턴이 보이면 그 지점부터는 화면으로도, 최종 저장될
- * 텍스트로도 포함하지 않음. 패턴이 아니라고 판명되면(오탐 방지) 원래대로 전부 흘려보냄
+ * 가입 플로우의 message_only 호출은 "내부 상태/필드 이름을 절대 언급하지 말라"고
+ * 프롬프트로 명시했는데도, 모델이 이따금 그걸 어김. 두 가지 형태로 확인됨:
+ * 1) { "action": "signup", ... } 같은 메타데이터 JSON을 답변 뒤에 그대로 이어붙임
+ * 2) "[이미 파악된 정보]\n- signupStep: ..." 처럼 자기 시스템 프롬프트의 섹션 형식을
+ *    흉내 내어 내부 상태를 그대로 요약해 붙임
+ * 실제 signupStep/signupData 판단은 어차피 이 텍스트가 아니라 별도 2차 메타데이터
+ * 호출로 하므로, 이건 화면에 노출되기만 하는 순수 부작용임. 아래 마커 중 하나라도
+ * 보이면 그 지점부터는 화면으로도, 최종 저장될 텍스트로도 포함하지 않음
  */
-function createSignupJsonLeakFilteredOnChunk(onChunk: (text: string) => void) {
+const SIGNUP_LEAK_MARKERS = [
+  "signupStep",
+  "signupData",
+  "quickReplies",
+  "collectedInfo",
+  "fraudWarningAcknowledged",
+  "identityVerified",
+  '"action"',
+  "[이미 파악된 정보]",
+  "[가입 진행 정보]",
+];
+const SIGNUP_LEAK_MAX_MARKER_LEN = Math.max(
+  ...SIGNUP_LEAK_MARKERS.map((m) => m.length),
+);
+
+function createSignupLeakFilteredOnChunk(onChunk: (text: string) => void) {
   let pending = "";
   let clean = "";
   let suppressed = false;
-  const SENTINEL = /^\{\s*"action"\s*:/;
-  const MAX_HOLD = 40;
+
+  function earliestMarkerIndex(text: string): number {
+    let earliest = -1;
+    for (const marker of SIGNUP_LEAK_MARKERS) {
+      const idx = text.indexOf(marker);
+      if (idx !== -1 && (earliest === -1 || idx < earliest)) earliest = idx;
+    }
+    return earliest;
+  }
 
   function tryFlush(isFinal: boolean) {
     if (suppressed) return;
-    const braceIdx = pending.indexOf("{");
-    if (braceIdx === -1) {
-      clean += pending;
-      if (pending) onChunk(pending);
-      pending = "";
-      return;
-    }
 
-    const before = pending.slice(0, braceIdx);
-    const after = pending.slice(braceIdx);
-
-    if (SENTINEL.test(after)) {
+    const markerIdx = earliestMarkerIndex(pending);
+    if (markerIdx !== -1) {
+      const before = pending.slice(0, markerIdx);
       if (before) {
         clean += before;
         onChunk(before);
@@ -236,19 +252,17 @@ function createSignupJsonLeakFilteredOnChunk(onChunk: (text: string) => void) {
       return;
     }
 
-    // 스트림이 끝났거나(더 올 데이터가 없음) 충분히 모았는데도 패턴이 아니면
-    // 오탐이었던 것으로 보고 보류했던 것까지 그대로 다 흘려보냄
-    if (isFinal || after.length >= MAX_HOLD) {
-      clean += pending;
-      if (pending) onChunk(pending);
-      pending = "";
-      return;
-    }
-
-    if (before) {
-      clean += before;
-      onChunk(before);
-      pending = after;
+    // 마커가 아직 안 보이면, 마커 일부가 다음 델타에 걸쳐 들어올 수 있는 꼬리
+    // (가장 긴 마커 길이-1만큼)만 남기고 나머지는 안전하게 흘려보냄. 스트림이
+    // 끝났다면(더 올 데이터가 없음) 남은 걸 전부 흘려보냄
+    const safeLen = isFinal
+      ? pending.length
+      : Math.max(0, pending.length - (SIGNUP_LEAK_MAX_MARKER_LEN - 1));
+    if (safeLen > 0) {
+      const toForward = pending.slice(0, safeLen);
+      clean += toForward;
+      onChunk(toForward);
+      pending = pending.slice(safeLen);
     }
   }
 
@@ -265,6 +279,18 @@ function createSignupJsonLeakFilteredOnChunk(onChunk: (text: string) => void) {
       return clean;
     },
   };
+}
+
+/*
+ * recommendations[].reason 값이 **볼드**로 시작할 때, 모델이 여는 큰따옴표를
+ * 빠뜨리는 경우가 실제로 확인됨 (예: "reason": **텍스트**... — 닫는 따옴표는
+ * 정상적으로 붙어있어서, 여는 따옴표만 보정하면 유효한 JSON이 됨).
+ * ": **" 형태(필드 값이 따옴표 없이 곧장 **로 시작하는 자리)를 찾아 그 앞에
+ * 여는 큰따옴표를 넣어줌. 이미 정상인 ": "**..." 형태는 콜론과 **사이에 큰따옴표가
+ * 있어서 이 패턴에 안 걸림
+ */
+function repairUnquotedBoldValue(raw: string): string {
+  return raw.replace(/(:\s*)(\*\*)/g, '$1"$2');
 }
 
 /*
@@ -297,8 +323,18 @@ function splitMessageAndMetadata(
     const metadata = JSON.parse(metaRaw) as Omit<ChatDecision, "message">;
     return { message, metadata };
   } catch {
-    console.error(`${label} 메타데이터 JSON 파싱 실패:`, metaRaw);
-    return { message, metadata: fallback };
+    // 흔한 형식 실수(여는 따옴표 누락) 한 가지만 보정해서 한 번 더 시도함
+    try {
+      const repaired = repairUnquotedBoldValue(metaRaw);
+      const metadata = JSON.parse(repaired) as Omit<ChatDecision, "message">;
+      console.warn(
+        `${label} 메타데이터 JSON 보정 후 파싱 성공 (여는 따옴표 누락)`,
+      );
+      return { message, metadata };
+    } catch {
+      console.error(`${label} 메타데이터 JSON 파싱 실패:`, metaRaw);
+      return { message, metadata: fallback };
+    }
   }
 }
 
@@ -742,7 +778,7 @@ export async function getSignupDecision(
     `[가입 AI] 1차(스트리밍) previous_interaction_id=${previousInteractionId ?? "(없음)"}`,
   );
 
-  const jsonLeakFilter = createSignupJsonLeakFilteredOnChunk(onChunk);
+  const leakFilter = createSignupLeakFilteredOnChunk(onChunk);
 
   let streamResult: StreamInteractionResult;
   try {
@@ -753,7 +789,7 @@ export async function getSignupDecision(
         previousInteractionId,
         systemInstruction: messageSystemInstruction,
       },
-      jsonLeakFilter.onChunk,
+      leakFilter.onChunk,
       signal,
     );
   } catch (err) {
@@ -780,9 +816,9 @@ export async function getSignupDecision(
     throw new Error("AI_REQUEST_FAILED");
   }
 
-  // 화면에 이미 흘려보낸 텍스트와 항상 같은 값이 되도록, JSON 누출 부분을 뺀
-  // 정리된 텍스트를 사용함 (streamResult.text는 누출된 JSON까지 그대로 들어있음)
-  const cleanMessage = jsonLeakFilter.finish();
+  // 화면에 이미 흘려보낸 텍스트와 항상 같은 값이 되도록, 누출된 부분을 뺀
+  // 정리된 텍스트를 사용함 (streamResult.text는 누출된 내용까지 그대로 들어있음)
+  const cleanMessage = leakFilter.finish();
 
   onMessageComplete();
 

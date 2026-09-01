@@ -141,6 +141,8 @@ ${AI_META_DELIMITER}
   reason 문장 안에서, 사용자가 채팅으로 직접 말한 조건(데이터 사용량, 선호 혜택, 예산 등)과
   실제로 일치하는 부분에만 **이렇게** 마크다운 굵게 표시를 하세요. 문장 전체를 굵게 하거나
   아무 데도 굵게 표시하지 않는 것은 금지입니다 — 반드시 일치하는 핵심 구절만 짧게 감싸세요.
+  [JSON 문법 주의] reason 값이 **로 시작하더라도 반드시 여는 큰따옴표(")를 먼저 쓰세요.
+  (예: "reason": **비쌈**... (X, JSON 깨짐) → "reason": "**비쌈**... (O))
 - quickReplies: 위 [빠른 답변(quickReplies) 규칙]을 따르는 문자열 배열`;
 
   const knownInfoBlock = formatKnownInfo(surveyContext?.answers, collectedInfo);

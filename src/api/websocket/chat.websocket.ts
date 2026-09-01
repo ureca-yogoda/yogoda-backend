@@ -52,6 +52,14 @@ interface ChatMessagePayload {
   // 지정된 버튼으로만 다음 단계로 넘어가야 하는 단계를 서버가 결정론적으로
   // 지키기 위한 기준값으로 사용함 (AI 판단만으로는 애매한 텍스트도 동의로 오판할 수 있음)
   currentSignupStep?: string;
+  // 본인 확인 카드에서 입력한 원본 값. message에는 AI가 읽을 수 있게 자연어 문장으로도
+  // 같은 내용을 담아 보내지만, DB에는 원문 대신 이 구조화된 JSON을 저장함 (나중에
+  // 필요할 때 문자열 파싱 없이 바로 가공할 수 있도록)
+  identityVerification?: {
+    name: string;
+    birth: string;
+    phoneNumber: string;
+  };
 }
 
 interface ChatSocketAuth {
@@ -200,6 +208,7 @@ export function setupChatSocket(io: Server) {
         isKickoff = false,
         signupCollectedData: clientSignupData,
         currentSignupStep,
+        identityVerification,
       } = payload;
 
       if (!message || message.trim() === "") {
@@ -243,7 +252,20 @@ export function setupChatSocket(io: Server) {
 
         // 킥오프 메시지는 DB에 사용자 메시지로 저장하지 않음
         if (!isKickoff) {
-          await saveMessage(currentSessionId, "user", message);
+          if (identityVerification) {
+            // 이름·생년월일·휴대폰 번호가 그대로 담긴 자연어 문장 대신, 구조화된
+            // JSON(identityVerification)을 signup_data에 저장함
+            await saveMessage(
+              currentSessionId,
+              "user",
+              "",
+              undefined,
+              "identity_verification_complete",
+              identityVerification,
+            );
+          } else {
+            await saveMessage(currentSessionId, "user", message);
+          }
         }
 
         // ── 가입 플로우 분기 ──────────────────────────────────────────────────
