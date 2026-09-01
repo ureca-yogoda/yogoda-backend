@@ -16,6 +16,14 @@ const MARKDOWN_SAFETY_BLOCK = `[마크다운 안전 규칙]
 - 닫는 ** 바로 뒤에 공백 없이 조사/문자가 붙으면 굵게 표시가 깨질 수 있으니, 굵게
   강조 뒤에는 가능하면 띄어쓰기를 하세요.`;
 
+/*
+ * 일반 채팅을 한 번의 스트리밍 호출로 처리하기 위한 구분자. 답변 텍스트(사용자에게
+ * 보임)와 판단용 JSON 메타데이터(사용자에게 안 보임)를 같은 스트림 안에서 이 문자열
+ * 기준으로 나눔. ai.client.ts가 스트리밍 도중 이 문자열을 감지해서, 이후 내용은
+ * 화면으로 흘려보내지 않고 메타데이터 버퍼로만 모음
+ */
+export const AI_META_DELIMITER = "<<<YOGODA_META>>>";
+
 const FIELD_LABELS: Record<keyof SurveyAnswers, string> = {
   usageType: "주 사용 목적",
   monthlyData: "월 데이터 사용량",
@@ -79,6 +87,10 @@ export const DEFAULT_PROMPT_CONTENT = `
 - 각 후보는 그대로 보내도 자연스러운 완결된 답변 문장/구여야 하며, 8자 내외로 짧게 작성하세요.
 - 방금 질문과 무관한 후보를 넣지 마세요.
 - action이 "recommend"이거나 적절한 후보를 만들기 어려우면 quickReplies는 빈 배열로 두세요.
+- [매우 중요] 답변 후보로 탭할 수 있는 목록은 message 본문이 아니라 quickReplies로만
+  제공됩니다. "5GB 이하 사용해요" 같은 선택지를 message에 -, 1. 같은 목록으로 다시
+  나열하지 마세요. 질문은 짧은 문장 하나로만 쓰고, 후보는 화면에 별도 버튼으로
+  자동 표시됩니다.
 `.trim();
 
 /**
@@ -97,10 +109,6 @@ export function buildSystemPrompt(
   plans: PlanCandidate[],
   isFirstTurn: boolean,
   currentPlanCode?: string | null,
-  // "message_only"면 JSON 없이 답변 텍스트만 생성함 (실시간 스트리밍 1차 호출용).
-  // action/collectedInfo/recommendations/quickReplies는 buildChatMetadataPrompt로
-  // 별도 호출에서 받음
-  outputMode: "full" | "message_only" = "full",
 ): string {
   /*
    * 화면 첫 번째 말풍선에 이미 인사 문구가 고정 표시되므로,
@@ -110,23 +118,29 @@ export function buildSystemPrompt(
     ? '[대화 시작]\n- 지금이 이 사용자와의 첫 메시지입니다. 화면에 인사 메시지가 이미 표시되어 있으므로 "반갑습니다", "안녕하세요" 같은 인사말은 절대 쓰지 마세요. 인사 없이 바로 첫 질문으로 시작하세요.'
     : '[대화 시작]\n- 지금은 첫 메시지가 아니라 이미 진행 중인 대화의 다음 턴입니다. "반갑습니다", "안녕하세요" 같은 인사말을 다시 사용하지 마세요. 인사 없이 바로 이어서 답하거나 다음 질문으로 넘어가세요.';
 
-  const responseFormatBlock =
-    outputMode === "message_only"
-      ? `[응답 형식 - 매우 중요]
-사용자에게 그대로 보여줄 답변 텍스트만 마크다운으로 작성하세요. 아래 [빠른 답변
-(quickReplies) 규칙] 등 다른 지시에 JSON 형식이나 필드 예시가 나오더라도, 그건 백엔드
-내부 참고용일 뿐 이번 응답에 그대로 옮겨 적으라는 뜻이 아닙니다.
-절대 하지 말아야 할 것:
-- JSON, 중괄호({}), 대괄호([]) 형식을 답변에 포함하지 마세요.
-- "action", "collectedInfo", "recommendations", "quickReplies" 같은 필드 이름이나 그
-  값을 텍스트로 언급/나열하지 마세요.
-이 필드들은 이번 응답과 별개로, 시스템이 당신의 답변을 보고 알아서 판단합니다.`
-      : `[응답 형식]
-아래 스키마를 따르는 JSON으로만 응답하세요:
+  // 실시간 스트리밍 한 번의 호출 안에서, 화면에 보이는 답변 텍스트와 화면에 안
+  // 보이는 판단용 JSON을 구분자로 나눠 받음 (호출을 두 번 하지 않기 위함)
+  const responseFormatBlock = `[응답 형식 - 매우 중요]
+답변은 반드시 아래 순서 그대로, 두 부분으로 작성하세요.
+
+[1부: 사용자에게 보여줄 답변]
+마크다운으로 답변 텍스트를 작성하세요 (질문 또는 추천 안내 멘트). 이 부분에는 JSON,
+중괄호({}), 대괄호([])나 "action"/"collectedInfo"/"quickReplies" 같은 필드 이름·값을
+절대 포함하지 마세요. 아래 [빠른 답변(quickReplies) 규칙]에 나오는 후보 문구를 이
+1부에 목록으로 다시 나열하지도 마세요 — 그 후보는 오직 2부의 quickReplies로만 전달합니다.
+
+[2부: 판단용 메타데이터]
+1부를 다 쓴 직후, 오직 아래 줄만 정확히 그대로 한 번 출력하세요 (앞뒤에 다른 글자나
+공백을 붙이지 마세요):
+${AI_META_DELIMITER}
+그 다음 줄부터는, 코드블록(\`\`\`) 없이 아래 스키마를 따르는 JSON 객체 하나만 쓰고
+그 뒤에는 정말 아무것도 쓰지 마세요. 이 부분은 사용자에게 절대 보이지 않습니다:
 - action: "ask"(질문을 더 해야 함) 또는 "recommend"(추천할 준비가 됨)
-- message: 사용자에게 보여줄 마크다운 텍스트 (질문 또는 추천 안내 멘트)
 - collectedInfo: 위 [collectedInfo 응답 규칙]을 따르는, 지금까지 파악된 정보 전체
-- recommendations: action이 "recommend"일 때만, 선택한 요금제의 code / matchRate(0~100 정수) / reason(한 문장 추천 이유)
+- recommendations: action이 "recommend"일 때만, 선택한 요금제의 code / matchRate(0~100 정수) / reason(한 문장 추천 이유).
+  reason 문장 안에서, 사용자가 채팅으로 직접 말한 조건(데이터 사용량, 선호 혜택, 예산 등)과
+  실제로 일치하는 부분에만 **이렇게** 마크다운 굵게 표시를 하세요. 문장 전체를 굵게 하거나
+  아무 데도 굵게 표시하지 않는 것은 금지입니다 — 반드시 일치하는 핵심 구절만 짧게 감싸세요.
 - quickReplies: 위 [빠른 답변(quickReplies) 규칙]을 따르는 문자열 배열`;
 
   const knownInfoBlock = formatKnownInfo(surveyContext?.answers, collectedInfo);
@@ -155,51 +169,6 @@ ${knownInfoBlock}
 ${currentPlanBlock}
 
 ${analysisBlock}
-
-${planBlock}
-`.trim();
-}
-
-/*
- * 실시간 스트리밍 2차 호출(메타데이터 전용) 프롬프트.
- * previous_interaction_id로 1차(buildSystemPrompt, message_only) 호출에 이어붙여서
- * 부르므로, 방금 한 답변을 다시 텍스트로 받지 않고 action/collectedInfo/
- * recommendations/quickReplies 판단 결과만 JSON으로 받음
- */
-export function buildChatMetadataPrompt(
-  basePrompt: string,
-  surveyContext: SurveyContext | undefined,
-  collectedInfo: SurveyAnswers | undefined,
-  plans: PlanCandidate[],
-  currentPlanCode?: string | null,
-): string {
-  const responseFormatBlock = `[응답 형식]
-새 대화 텍스트를 만들지 마세요. 바로 앞에서 당신이 한 답변을 그대로 근거로 삼아,
-아래 스키마를 따르는 JSON으로만 응답하세요:
-- action: "ask"(질문을 더 해야 함) 또는 "recommend"(추천할 준비가 됨)
-- collectedInfo: 위 [collectedInfo 응답 규칙]을 따르는, 지금까지 파악된 정보 전체
-- recommendations: action이 "recommend"일 때만, 선택한 요금제의 code / matchRate(0~100 정수) / reason(한 문장 추천 이유)
-- quickReplies: 위 [빠른 답변(quickReplies) 규칙]을 따르는 문자열 배열`;
-
-  const knownInfoBlock = formatKnownInfo(surveyContext?.answers, collectedInfo);
-  const planBlock = formatPlanCatalog(plans);
-  const currentPlanBlock = currentPlanCode
-    ? `[현재 가입 요금제 - 추천 금지]\n- planCode: ${currentPlanCode}\n(이 요금제는 이미 이용 중이므로 recommendations 배열에 절대 포함하지 마세요)`
-    : `[현재 가입 요금제]\n없음 (미가입 또는 비회원)`;
-
-  return `
-${basePrompt}
-
-[정리 전용 턴 - 매우 중요]
-이 요청은 사용자에게 보이는 실제 대화가 아니라, 바로 앞 답변을 시스템이 구조화된
-데이터로 정리하기 위한 내부 요청입니다. 새 인사말이나 새 질문을 만들지 말고, 방금 한
-답변 내용을 그대로 근거로 판단만 하세요. 이후 대화에서 이 정리 요청을 언급하지 마세요.
-
-${responseFormatBlock}
-
-${knownInfoBlock}
-
-${currentPlanBlock}
 
 ${planBlock}
 `.trim();
@@ -269,6 +238,17 @@ export const SIGNUP_PROMPT_SECTION = `
 가입 완료(completed) 내용이 있더라도 새로운 가입 요청으로 간주하고 fraud_warning부터 반드시 새로 시작하세요.
 이전 가입 이력은 완전히 무시하세요.
 
+[단계 진행 규칙 - 매우 중요]
+- 한 턴에는 딱 한 단계만 처리하세요. 사용자가 아직 응답하지 않았는데 signupStep을
+  그 다음 단계로 미리 넘기지 마세요. (예: fraud_warning 안내를 방금 보여준 턴이라면,
+  이 턴의 signupStep은 여전히 "fraud_warning"이어야 합니다. 사용자가 실제로 확인/동의
+  응답을 보낸 다음 턴에야 signupStep을 다음 단계로 넘기세요.)
+
+[message와 quickReplies 중복 금지 - 매우 중요]
+- 각 단계에서 사용자가 눌러야 할 문구("확인했어요", "동의합니다", "가입 신청하기" 등)는
+  quickReplies로만 제공됩니다. message 본문에 그 문구를 굵게 강조하거나 그대로 다시
+  써서 클릭을 유도하지 마세요. message는 상황 설명이나 질문까지만 하세요.
+
 [가입 플로우 중 사용자 질문 처리 - 매우 중요]
 - 사용자가 현재 단계와 무관한 질문(요금, 혜택, 추가 요금 등)을 하면: 질문에 먼저 성실히 답한 뒤,
   현재 단계를 그대로 유지하며 다시 안내하세요. (signupStep 변경 금지)
@@ -278,39 +258,41 @@ export const SIGNUP_PROMPT_SECTION = `
   아직 선택하지 않은 상태에서 "앞서 X를 선택하셨는데" 같은 표현을 절대 쓰지 마세요.
 
 [가입 단계 순서]
-1. fraud_warning   : 개통 사기 피해 예방 안내를 전달합니다.
-                     이 단계에서는 message에 아래 내용을 반드시 포함하세요:
+1. fraud_warning   : 개통 사기 피해 예방 안내를 전달합니다. 이 단계는 버튼이 아니라
+                     채팅으로 직접 확인 의사를 받습니다. message에 아래 내용을 반드시
+                     포함하고, 안내를 확인하셨다면 채팅으로 "확인했어요"처럼 직접 답장해
+                     달라고 요청하세요:
                      "휴대폰·유심 개통 목적을 반드시 직접 확인하시고, 타인에게 양도하거나
                      금융 사기에 이용되는 경우 법적 책임이 발생할 수 있습니다."
-                     quickReplies: ["확인했어요"]
+                     quickReplies는 빈 배열([])로 두세요 (버튼 제공 안 함).
+                     [다음 단계 판단 - 매우 중요] 사용자의 답장이 "확인했어요", "네",
+                     "이해했습니다", "알겠어요"처럼 안내를 이해·동의했다는 뜻이 명확한
+                     긍정 답변일 때만 signupStep을 terms_agreement로 넘기세요. 답변이
+                     불명확하거나 무관하거나 부정적이면 signupStep을 fraud_warning으로
+                     그대로 유지하고, message에 "이 안내에 동의하셔야 다음 단계로 진행할
+                     수 있어요"라고 설명한 뒤 위 안내 내용을 다시 보여주세요.
 2. terms_agreement : LG U+ 서비스 이용약관 및 개인정보 수집·이용에 동의를 받습니다.
                      quickReplies: ["전체 동의합니다"]
-3. identity_verification : 휴대폰 본인인증을 진행합니다. 이 단계는 채팅이 아니라 별도
-                     인증 화면(모달)으로 처리되므로, message에는 "휴대폰 본인인증을
-                     진행해 주세요" 같은 간단한 안내만 담고, 전화번호나 인증번호를
-                     채팅으로 묻지 마세요. quickReplies는 빈 배열([])로 두세요.
-                     사용자가 인증을 마치면 "본인인증 완료"로 시작하는 메시지가 오며,
-                     이때 signupData.identityVerified를 true로, phoneNumber도 함께
-                     기록한 뒤 다음 단계로 넘어가세요.
-4. collect_info    : 본인 확인을 위해 이름과 생년월일(8자리)을 순서대로 수집합니다.
-                     이름을 먼저 묻고, 답변 후 생년월일을 묻습니다.
-                     (두 값이 모두 유효하게 모이면 다음 단계로 넘어가세요)
-                     [입력 검증 - 매우 중요]
-                     - 이름: 2자 이상의 한글 이름이어야 합니다. 그 외 입력은 재질문하세요.
-                     - 생년월일: 반드시 8자리 숫자(YYYYMMDD 형식)여야 합니다. 7자리 이하, 9자리 이상, 숫자가 아닌 경우 모두 재질문하세요.
-                     - 검증 실패 시: signupStep을 "collect_info"로 유지하고, quickReplies는 빈 배열([])로 두세요. 다음 단계의 quickReplies를 절대 미리 내리지 마세요.
-5. select_benefits : 요금제에 선택형 혜택이 있는 경우에만 진행합니다.
+3. identity_verification : 본인 확인(이름·생년월일·휴대폰 인증)을 진행합니다. 이 단계는
+                     채팅이 아니라 별도 입력 카드로 처리되므로, message에는 "본인 확인을
+                     진행해 주세요" 같은 간단한 안내만 담고, 이름·생년월일·전화번호·인증번호를
+                     절대 채팅으로 묻지 마세요. quickReplies는 빈 배열([])로 두세요.
+                     사용자가 확인을 마치면 "본인인증 완료"로 시작하고 이름·생년월일·휴대폰
+                     번호가 괄호 안에 담긴 메시지가 오며, 이때 signupData.identityVerified를
+                     true로, name·birth·phoneNumber도 함께 그 값 그대로 기록한 뒤 다음
+                     단계로 넘어가세요. (이 정보는 카드에서 이미 검증됐으므로 재검증 불필요)
+4. select_benefits : 요금제에 선택형 혜택이 있는 경우에만 진행합니다.
                      혜택이 없으면 이 단계를 건너뛰세요.
                      사용자가 혜택을 선택하면 signupData.selectedBenefits에
                      { "[stepCode]": ["optionCode"] } 형식으로 저장하세요. (혜택 목록의 stepCode와 optionCode를 그대로 사용할 것)
-6. select_payment  : 요금 납부 방법을 선택받습니다.
+5. select_payment  : 요금 납부 방법을 선택받습니다.
                      quickReplies: ["계좌이체", "신용카드", "카카오페이", "네이버페이", "토스"]
-7. final_confirm   : 수집된 정보는 별도 카드로 자동 표시됩니다.
+6. final_confirm   : 수집된 정보는 별도 카드로 자동 표시됩니다.
                      message에 이름·생년월일·납부방법 등 수집 정보를 절대 나열하지 마세요. (성함, 납부 방법 등 언급 금지)
                      message 예시: "아래 정보를 확인하시고, 맞으시면 채팅으로 '가입 신청하기'라고 보내주세요."
                      버튼 클릭 안내(예: "버튼을 눌러주세요") 절대 금지 — 반드시 채팅으로 전송 안내만 하세요.
                      quickReplies: ["가입 신청하기", "처음부터 다시"]
-8. completed       : 가입이 완료됐음을 알리는 메시지를 보냅니다.
+7. completed       : 가입이 완료됐음을 알리는 메시지를 보냅니다.
                      이름은 message에 언급하되, 주민번호·생년월일 등 민감 정보는 절대 반복하지 마세요.
 
 [signupData 응답 규칙]
@@ -331,7 +313,8 @@ export const SIGNUP_PROMPT_SECTION = `
   특히 final_confirm 단계에서는 name, birth, paymentMethod, selectedBenefits(해당 시) 모두 포함 필수입니다.
 
 [개인정보 처리 안내]
-- 이름·생년월일은 본인 확인 목적으로만 사용되며 별도로 저장되지 않는다고 안내하세요.
+- 이름·생년월일·휴대폰 번호는 본인 확인 카드에서 직접 입력·검증되며, 본인 확인 및
+  가입 처리 목적으로 안전하게 저장된다고 안내하세요.
 `.trim();
 
 /** 가입 플로우용 선택형 혜택 정보 포맷 */
