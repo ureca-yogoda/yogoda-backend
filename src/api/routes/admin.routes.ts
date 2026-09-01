@@ -162,6 +162,11 @@ router.get("/dashboard", authMiddleware, adminMiddleware, getDashboardHandler);
  *           type: string
  *         description: 프롬프트 버전 필터
  *       - in: query
+ *         name: chat_log_consent
+ *         schema:
+ *           type: boolean
+ *         description: 채팅 기록 열람 동의 여부 필터. 생략하면 전체 조회 (false는 미응답 포함)
+ *       - in: query
  *         name: page
  *         schema:
  *           type: number
@@ -216,6 +221,9 @@ router.get("/dashboard", authMiddleware, adminMiddleware, getDashboardHandler);
  *                       duration:
  *                         type: number
  *                         description: 세션 지속 시간 (초)
+ *                       chatLogConsent:
+ *                         type: boolean
+ *                         description: 채팅 기록 열람 동의 여부 (false면 상세 조회 시 messages가 빈 배열로 옴)
  *       400:
  *         description: 잘못된 쿼리 파라미터
  *         content:
@@ -291,6 +299,9 @@ router.get("/sessions", authMiddleware, adminMiddleware, getSessionListHandler);
  *                 duration:
  *                   type: number
  *                   description: 세션 지속 시간 (초)
+ *                 chatLogConsent:
+ *                   type: boolean
+ *                   description: 채팅 기록 열람 동의 여부. false면 messages는 항상 빈 배열
  *                 messages:
  *                   type: array
  *                   items:

@@ -19,6 +19,7 @@ export async function getSessionListHandler(
       status = "all",
       drop_stage: dropStage,
       prompt_version: promptVersion,
+      chat_log_consent: chatLogConsentRaw,
       page = "1",
       limit = "20",
     } = req.query as Record<string, string | undefined>;
@@ -28,12 +29,25 @@ export async function getSessionListHandler(
       return;
     }
 
+    let chatLogConsent: boolean | undefined;
+    if (chatLogConsentRaw === "true") {
+      chatLogConsent = true;
+    } else if (chatLogConsentRaw === "false") {
+      chatLogConsent = false;
+    } else if (chatLogConsentRaw !== undefined) {
+      res
+        .status(400)
+        .json({ message: "chat_log_consent는 true 또는 false여야 해요." });
+      return;
+    }
+
     const result = await getSessionList({
       startDate,
       endDate,
       status: status as "all" | "completed" | "dropped",
       dropStage,
       promptVersion,
+      chatLogConsent,
       page: Number(page) || 1,
       limit: Number(limit) || 20,
     });

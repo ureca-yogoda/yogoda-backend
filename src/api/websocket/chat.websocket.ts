@@ -14,6 +14,7 @@ import {
 } from "../../services/ai/ai.client.js";
 import {
   finalizeSessionStatus,
+  recordChatLogConsent,
   recordConversionEvent,
   resolveChatSession,
   saveMessage,
@@ -75,6 +76,10 @@ interface ConversionEventPayload {
 interface SignupEntryPayload {
   text?: string;
   planCode?: string;
+}
+
+interface ConsentPayload {
+  consented?: boolean;
 }
 
 function isFunnelStage(value: unknown): value is ChatSessionFunnelStage {
@@ -784,6 +789,17 @@ export function setupChatSocket(io: Server) {
         await recordUiEvent(currentSessionId, payload.element, payload.action);
       } catch (err) {
         console.error("UI 이벤트 처리 에러:", err);
+      }
+    });
+
+    socket.on("consent", async (payload: ConsentPayload) => {
+      if (typeof payload.consented !== "boolean") return;
+
+      try {
+        await sessionReady;
+        await recordChatLogConsent(currentSessionId, payload.consented);
+      } catch (err) {
+        console.error("채팅 기록 동의 처리 에러:", err);
       }
     });
 
