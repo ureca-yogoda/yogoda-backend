@@ -195,7 +195,9 @@ export async function testPromptHandler(
         currentPlanCode: null,
       },
       (text) => writeSseEvent(res, "chunk", { text }),
-      () => {},
+      // 텍스트 스트리밍은 끝났지만 추천/퀵리플라이 등 메타데이터 정리가 아직 남아있음을
+      // 알려줌 (실제 채팅 소켓의 loading_extra와 동일한 시점)
+      () => writeSseEvent(res, "loading_extra", {}),
       abortController.signal,
     );
 

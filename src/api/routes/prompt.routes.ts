@@ -253,7 +253,8 @@ router.put("/draft", authMiddleware, adminMiddleware, saveDraftHandler);
  *     responses:
  *       200:
  *         description: >
- *           SSE 스트림. chunk 이벤트로 토큰이 순차 전송되고,
+ *           SSE 스트림. chunk 이벤트로 토큰이 순차 전송되고, 텍스트 스트리밍이 끝나면
+ *           loading_extra 이벤트로 메타데이터(추천/퀵리플라이) 정리가 아직 남았음을 알림.
  *           done 이벤트로 interactionId와 구조화된 decision이 전송됨.
  *           중간 에러는 error 이벤트로 전송됨.
  *         content:
