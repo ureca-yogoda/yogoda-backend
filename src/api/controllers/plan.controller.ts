@@ -9,6 +9,7 @@ import {
   joinPlan,
 } from "../../services/plan.service.js";
 import { completeMissionFromAction } from "../../services/mission.service.js";
+import { comparePlansWithAI } from "../../services/ai/ai.client.js";
 
 type SelectedPlanOptions = Record<string, string[]>;
 
@@ -259,6 +260,45 @@ export const changePlanHandler = async (
       message: "요금제 변경이 완료되었어요.",
       ...result,
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/*
+ * 두 요금제를 AI로 비교한 결과를 반환함
+ * GET /plans/ai-compare?current=CODE&selected=CODE
+ */
+export const getAIPlanComparisonHandler = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) => {
+  try {
+    const { current, selected } = req.query;
+
+    if (typeof current !== "string" || typeof selected !== "string") {
+      res
+        .status(400)
+        .json({ message: "current와 selected 요금제 코드가 필요합니다." });
+      return;
+    }
+
+    const [currentPlan, selectedPlan] = await Promise.all([
+      getPlanByCode(current),
+      getPlanByCode(selected),
+    ]);
+
+    if (!currentPlan || !selectedPlan) {
+      res.status(404).json({ message: "요금제를 찾을 수 없습니다." });
+      return;
+    }
+
+    const result = await comparePlansWithAI(
+      currentPlan as unknown as Record<string, unknown>,
+      selectedPlan as unknown as Record<string, unknown>,
+    );
+    res.status(200).json(result);
   } catch (error) {
     next(error);
   }

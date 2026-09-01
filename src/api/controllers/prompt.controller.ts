@@ -60,7 +60,20 @@ export async function getPromptHistoryHandler(
   next: NextFunction,
 ) {
   try {
-    res.status(200).json(await getPromptHistory());
+    const page = Number(req.query.page ?? 1);
+    const limit = Number(req.query.limit ?? 10);
+
+    if (!Number.isInteger(page) || page < 1) {
+      res.status(400).json({ message: "page는 1 이상의 정수여야 해요." });
+      return;
+    }
+
+    if (!Number.isInteger(limit) || limit < 1) {
+      res.status(400).json({ message: "limit은 1 이상의 정수여야 해요." });
+      return;
+    }
+
+    res.status(200).json(await getPromptHistory(page, limit));
   } catch (error) {
     next(error);
   }

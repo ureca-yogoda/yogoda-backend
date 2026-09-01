@@ -4,7 +4,9 @@ import { FUNNEL_STAGE_ORDER } from "../constants/funnel-stage.js";
 import {
   ChatMessageModel,
   type ChatMessageRole,
+  type ChatMessageType,
   type IChatMessagePlanCard,
+  type IChatMessagePreselectedPlan,
 } from "../models/chat-message.model.js";
 import {
   ChatSessionModel,
@@ -129,26 +131,36 @@ export async function getSessionMessages(sessionId: string) {
     id: doc._id,
     role: doc.role,
     content: doc.content,
+    messageType: (doc.message_type ?? "text") as ChatMessageType,
     plans: doc.plans,
+    signupData: doc.signup_data,
+    preselectedPlan: doc.preselected_plan,
     createdAt: doc.created_at,
   }));
 }
 
 /**
- * 메시지 한 건을 세션에 저장하고, 세션의 updated_at을 갱신합니다.
- * plans는 AI가 요금제를 추천한 메시지에만 함께 넘어오며, 재접속 시 카드를 그대로 복원하는 데 쓰입니다.
+ * 메시지 한 건을 세션에 저장하고 세션의 updated_at을 갱신합니다.
+ * messageType이 카드 타입(fraud_warning, terms 등)이면 content는 빈 문자열로 저장하며,
+ * 재접속·관리자 열람 시 카드를 그대로 복원하는 데 사용됩니다.
  */
 export async function saveMessage(
   sessionId: string,
   role: ChatMessageRole,
   content: string,
   plans?: IChatMessagePlanCard[],
+  messageType?: ChatMessageType,
+  signupData?: Record<string, unknown>,
+  preselectedPlan?: IChatMessagePreselectedPlan,
 ) {
   await ChatMessageModel.create({
     session_id: sessionId,
     role,
     content,
     plans,
+    message_type: messageType ?? "text",
+    signup_data: signupData,
+    preselected_plan: preselectedPlan,
   });
   await ChatSessionModel.updateOne(
     { _id: sessionId },
@@ -178,7 +190,7 @@ export async function updateCollectedInfo(
  */
 export async function updateLastInteractionId(
   sessionId: string,
-  interactionId: string,
+  interactionId: string | null,
 ) {
   await ChatSessionModel.updateOne(
     { _id: sessionId },
@@ -210,11 +222,23 @@ export async function recordConversionEvent(
 /**
  * 소켓 연결이 끊길 때, 아직 판정되지 않은(status: null) 세션의 status를
  * last_stage 기준으로 확정합니다. 이미 확정된 세션은 건드리지 않습니다.
+ * 메시지를 한 건도 주고받지 않은 세션(채팅창만 열었다 닫은 경우)은 실제
+ * 상담으로 볼 수 없으므로 세션 자체를 삭제합니다. (ui_events는 세션 status와
+ * 무관하게 독립적으로 집계되므로 영향 없음)
  */
 export async function finalizeSessionStatus(sessionId: string) {
   const session =
     await ChatSessionModel.findById(sessionId).select("status last_stage");
   if (!session || session.status !== null) return;
+
+  const hasMessages = await ChatMessageModel.exists({
+    session_id: sessionId,
+  });
+
+  if (!hasMessages) {
+    await ChatSessionModel.deleteOne({ _id: sessionId });
+    return;
+  }
 
   session.status =
     session.last_stage === "signup_completed" ? "completed" : "dropped";
@@ -234,4 +258,19 @@ export async function claimGuestSession(userId: string, sessionId: string) {
     { $set: { user_id: userId } },
     { new: true },
   );
+}
+
+// ─── 가입 플로우 데이터 저장 ───────────────────────────────────────────────────
+
+/**
+ * 가입 플로우에서 AI가 매 턴 반환하는 signupData를 세션에 누적 저장합니다.
+ * 세션이 끊기고 재연결돼도 가입 진행 상태가 유지됩니다.
+ */
+export async function updateSignupCollectedData(
+  sessionId: string,
+  signupData: Record<string, unknown>,
+): Promise<void> {
+  await ChatSessionModel.findByIdAndUpdate(sessionId, {
+    $set: { signup_collected_data: signupData },
+  });
 }

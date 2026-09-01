@@ -6,14 +6,14 @@ const membershipRanks: Record<string, number> = {
 
 export interface BenefitEligibilityCondition {
   minMembershipTier?: string | null;
-  minPlanMonthlyFee?: number | null;
-  recommendedPlanCodes?: string[];
+  min_plan_monthly_fee?: number | null;
+  recommended_plan_codes?: string[];
 }
 
 export interface UserPlanCondition {
   code: string;
-  monthlyFee: number;
-  membershipTier: string | null;
+  monthly_fee: number;
+  membership_tier: string | null;
 }
 
 function normalizeMembershipTier(tier: string | null) {
@@ -39,14 +39,17 @@ export function evaluateBenefitEligibility(
   plan: UserPlanCondition | null,
 ) {
   // 스키마 기본값 적용 전에 저장된 혜택 문서에는 배열 필드가 없을 수 있음
-  const recommendedPlanCodes = benefit.recommendedPlanCodes ?? [];
+  const recommended_plan_codes = benefit.recommended_plan_codes ?? [];
 
   if (!plan) {
     return { eligible: false, reason: "요금제 가입 후 이용할 수 있어요." };
   }
 
   if (
-    !meetsMembershipTier(plan.membershipTier, benefit.minMembershipTier ?? null)
+    !meetsMembershipTier(
+      plan.membership_tier,
+      benefit.minMembershipTier ?? null,
+    )
   ) {
     return {
       eligible: false,
@@ -55,18 +58,18 @@ export function evaluateBenefitEligibility(
   }
 
   if (
-    benefit.minPlanMonthlyFee != null &&
-    plan.monthlyFee < benefit.minPlanMonthlyFee
+    benefit.min_plan_monthly_fee != null &&
+    plan.monthly_fee < benefit.min_plan_monthly_fee
   ) {
     return {
       eligible: false,
-      reason: `월 ${benefit.minPlanMonthlyFee.toLocaleString("ko-KR")}원 이상 요금제에서 이용할 수 있어요.`,
+      reason: `월 ${benefit.min_plan_monthly_fee.toLocaleString("ko-KR")}원 이상 요금제에서 이용할 수 있어요.`,
     };
   }
 
   if (
-    recommendedPlanCodes.length > 0 &&
-    !recommendedPlanCodes.includes(plan.code)
+    recommended_plan_codes.length > 0 &&
+    !recommended_plan_codes.includes(plan.code)
   ) {
     return { eligible: false, reason: "현재 요금제에서는 제공되지 않아요." };
   }

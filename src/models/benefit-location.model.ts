@@ -13,7 +13,7 @@ export interface IBenefitLocation {
     type: "Point";
     coordinates: [number, number];
   };
-  isActive: boolean;
+  is_active: boolean;
 }
 
 const benefitLocationSchema = new Schema<IBenefitLocation>(
@@ -45,7 +45,7 @@ const benefitLocationSchema = new Schema<IBenefitLocation>(
         },
       },
     },
-    isActive: { type: Boolean, default: true, index: true },
+    is_active: { type: Boolean, default: true, index: true },
   },
   {
     collection: "benefit_locations",

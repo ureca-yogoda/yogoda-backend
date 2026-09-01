@@ -9,7 +9,7 @@ export type NotificationType =
 
 export interface INotification {
   _id: Types.ObjectId;
-  user_id: string;
+  user_id: Types.ObjectId;
   type: NotificationType;
   title: string;
   body: string;
@@ -23,7 +23,11 @@ export interface INotification {
 
 const notificationSchema = new Schema<INotification>(
   {
-    user_id: { type: String, required: true },
+    user_id: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
     type: {
       type: String,
       required: true,

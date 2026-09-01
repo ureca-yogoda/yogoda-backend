@@ -116,7 +116,7 @@ async function seedBenefitLocations() {
             type: "Point",
             coordinates: [coordinates.longitude, coordinates.latitude],
           },
-          isActive: true,
+          is_active: true,
         },
       },
       { upsert: true },

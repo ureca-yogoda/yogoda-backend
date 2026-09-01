@@ -31,8 +31,7 @@ const ELEMENT_LABELS: Record<UiEventElement, string> = {
   plan_detail: "자세히 보기",
   plan_comparison: "요금제 비교",
   signup_button: "가입하기",
-  benefit_detail: "혜택 자세히",
-  agent_connect: "상담사 연결",
+  explore_plans: "다른 요금제 탐색하기",
 };
 
 const LOW_CTR_THRESHOLD = 30;

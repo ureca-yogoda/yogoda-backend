@@ -1,5 +1,3 @@
-import { randomBytes } from "node:crypto";
-
 import { isValidObjectId, Types } from "mongoose";
 
 import { BenefitModel } from "../models/benefit.model.js";
@@ -7,6 +5,10 @@ import { PlanModel } from "../models/plan.model.js";
 import { UserCouponModel } from "../models/user-coupon.model.js";
 import { UserModel } from "../models/user.model.js";
 import { AppError } from "../utils/AppError.js";
+import {
+  createBarcodeValue,
+  createCouponNumber,
+} from "../utils/coupon-credentials.js";
 import { meetsMembershipTier } from "./benefit-eligibility.js";
 
 export type CouponFilter =
@@ -22,18 +24,6 @@ function getEndOfMonth(date: Date) {
   return new Date(
     Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1) - 1,
   );
-}
-
-function createCouponNumber() {
-  return randomBytes(6)
-    .toString("hex")
-    .toUpperCase()
-    .match(/.{1,4}/g)!
-    .join("-");
-}
-
-function createBarcodeValue() {
-  return randomBytes(16).toString("hex").toUpperCase();
 }
 
 /*
@@ -54,7 +44,7 @@ export async function syncEligibleCouponsForUser(userId: string) {
   }
 
   const plan = await PlanModel.findById(user.current_plan_id)
-    .select("code monthlyFee membershipTier")
+    .select("code monthly_fee membership_tier")
     .lean();
 
   if (!plan) {
@@ -63,35 +53,32 @@ export async function syncEligibleCouponsForUser(userId: string) {
 
   const now = new Date();
   const benefits = await BenefitModel.find({
-    isActive: true,
-    benefitType: "coupon",
+    is_active: true,
+    benefit_type: "coupon",
     $and: [
       {
+        $or: [{ start_date: null }, { start_date: { $lte: now } }],
+      },
+      {
+        $or: [{ end_date: null }, { end_date: { $gte: now } }],
+      },
+      {
         $or: [
-          { "period.startsAt": null },
-          { "period.startsAt": { $lte: now } },
+          { recommended_plan_codes: { $size: 0 } },
+          { recommended_plan_codes: plan.code },
         ],
       },
       {
-        $or: [{ "period.endsAt": null }, { "period.endsAt": { $gte: now } }],
-      },
-      {
         $or: [
-          { recommendedPlanCodes: { $size: 0 } },
-          { recommendedPlanCodes: plan.code },
-        ],
-      },
-      {
-        $or: [
-          { minPlanMonthlyFee: null },
-          { minPlanMonthlyFee: { $lte: plan.monthlyFee } },
+          { min_plan_monthly_fee: null },
+          { min_plan_monthly_fee: { $lte: plan.monthly_fee } },
         ],
       },
     ],
   }).lean();
 
   const eligibleBenefits = benefits.filter((benefit) =>
-    meetsMembershipTier(plan.membershipTier, benefit.minMembershipTier),
+    meetsMembershipTier(plan.membership_tier, benefit.minMembershipTier),
   );
 
   if (eligibleBenefits.length === 0) {
@@ -115,7 +102,7 @@ export async function syncEligibleCouponsForUser(userId: string) {
             coupon_number: createCouponNumber(),
             barcode_value: createBarcodeValue(),
             issued_at: now,
-            expires_at: benefit.period.endsAt ?? endOfMonth,
+            expires_at: benefit.end_date ?? endOfMonth,
             used_at: null,
           },
         },

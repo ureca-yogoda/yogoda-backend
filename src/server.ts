@@ -19,6 +19,8 @@ import adminRoutes from "./api/routes/admin.routes.js";
 import { setupChatSocket } from "./api/websocket/chat.websocket.js";
 import { setupNotificationSocket } from "./api/websocket/notification.websocket.js";
 import notificationRoutes from "./api/routes/notification.routes.js";
+import subscriptionRoutes from "./api/routes/subscription.routes.js";
+import usageRoutes from "./api/routes/usage.routes.js";
 import { assertRequiredEnv, env, loadSecrets } from "./core/config/env.js";
 import { swaggerSpec } from "./core/config/swagger.js";
 import { connectDB } from "./core/db/mongoose.js";
@@ -55,6 +57,8 @@ app.use("/api/rewards", rewardRoutes);
 app.use("/api/admin/prompts", promptRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/subscriptions", subscriptionRoutes);
+app.use("/api/usage", usageRoutes);
 
 app.use(errorHandler);
 

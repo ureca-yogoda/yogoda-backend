@@ -2,6 +2,10 @@ import { Schema, model, Types } from "mongoose";
 
 export type Provider = "kakao" | "google" | "naver";
 export type Theme = "light" | "dark";
+export type UserRole = "user" | "admin";
+export type SignupType = "신규가입" | "번호이동";
+export type PaymentMethod =
+  "계좌이체" | "신용카드" | "카카오페이" | "네이버페이" | "토스";
 
 export interface IUser {
   _id: Types.ObjectId;
@@ -16,8 +20,17 @@ export interface IUser {
 
   previous_monthly_fee: number | null;
 
+  signup_type: SignupType | null;
+  payment_method: PaymentMethod | null;
+
+  // 가입 플로우 본인인증 카드에서 수집한 개인정보 (본인 확인 목적)
+  real_name: string | null;
+  birth_date: string | null;
+  phone_number: string | null;
+  identity_verified_at: Date | null;
+
   user_patterns: Record<string, unknown> | null;
-  role: string;
+  role: UserRole;
   theme: Theme;
   created_at: Date;
   updated_at: Date;
@@ -55,11 +68,45 @@ const userSchema = new Schema<IUser>(
       default: null,
     },
 
+    signup_type: {
+      type: String,
+      enum: ["신규가입", "번호이동"],
+      default: null,
+    },
+
+    payment_method: {
+      type: String,
+      enum: ["계좌이체", "신용카드", "카카오페이", "네이버페이", "토스"],
+      default: null,
+    },
+
+    real_name: {
+      type: String,
+      default: null,
+    },
+    birth_date: {
+      type: String,
+      default: null,
+    },
+    phone_number: {
+      type: String,
+      default: null,
+    },
+    identity_verified_at: {
+      type: Date,
+      default: null,
+    },
+
     user_patterns: {
       type: Schema.Types.Mixed,
       default: null,
     },
-    role: { type: String, required: true, default: "user" },
+    role: {
+      type: String,
+      enum: ["user", "admin"],
+      required: true,
+      default: "user",
+    },
     theme: {
       type: String,
       enum: ["light", "dark"],
