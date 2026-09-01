@@ -54,8 +54,7 @@ export interface ChatRecommendation {
 export type SignupStep =
   | "fraud_warning" // 개통 사기 예방 안내 확인
   | "terms_agreement" // 이용약관 동의
-  | "identity_verification" // 휴대폰 본인인증 (형식상 인증 모달)
-  | "collect_info" // 본인 확인 (이름 + 생년월일)
+  | "identity_verification" // 본인인증 카드 (이름·생년월일·휴대폰 번호 + 인증번호)
   | "select_benefits" // 선택형 혜택 (choiceBenefits가 있는 요금제만)
   | "select_payment" // 요금납부 방법 선택
   | "final_confirm" // 가입 내용 최종 확인

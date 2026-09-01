@@ -190,7 +190,7 @@ export async function updateCollectedInfo(
  */
 export async function updateLastInteractionId(
   sessionId: string,
-  interactionId: string,
+  interactionId: string | null,
 ) {
   await ChatSessionModel.updateOne(
     { _id: sessionId },
