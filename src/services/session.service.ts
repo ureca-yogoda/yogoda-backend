@@ -63,6 +63,11 @@ function buildBaseFilter(query: SessionListQuery): Record<string, unknown> {
     filter.prompt_version = query.promptVersion;
   }
 
+  if (query.chatLogConsent !== undefined) {
+    // false는 명시적 거부와 미응답(null)을 모두 포함함 (조회 시엔 둘 다 "못 봄"으로 동일 취급)
+    filter.chat_log_consent = query.chatLogConsent ? true : { $ne: true };
+  }
+
   return filter;
 }
 
@@ -113,6 +118,7 @@ export const getSessionList = async (
     promptVersion: session.prompt_version,
     createdAt: session.created_at,
     duration: getDuration(session),
+    chatLogConsent: session.chat_log_consent === true,
   }));
 
   return {
@@ -142,13 +148,18 @@ export const getSessionDetail = async (
     throw new AppError(404, "세션을 찾을 수 없어요.");
   }
 
+  // 동의하지 않은(null 포함) 세션은 관리자가 대화 내용을 열람할 수 없음
+  const chatLogConsent = session.chat_log_consent === true;
+
   const [user, messages] = await Promise.all([
     session.user_id
       ? UserModel.findById(session.user_id).select("nickname").lean()
       : null,
-    ChatMessageModel.find({ session_id: sessionId })
-      .sort({ created_at: 1 })
-      .lean(),
+    chatLogConsent
+      ? ChatMessageModel.find({ session_id: sessionId })
+          .sort({ created_at: 1 })
+          .lean()
+      : [],
   ]);
 
   return {
@@ -159,6 +170,7 @@ export const getSessionDetail = async (
     promptVersion: session.prompt_version,
     createdAt: session.created_at,
     duration: getDuration(session),
+    chatLogConsent,
     messages: messages.map((message) => ({
       messageId: message._id,
       sender: message.role,

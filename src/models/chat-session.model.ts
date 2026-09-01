@@ -27,6 +27,10 @@ export interface IChatSession {
   // 사용자가 도달한 마지막 퍼널 단계. 아직 아무 단계에도 도달하지 않았으면 null
   last_stage: ChatSessionFunnelStage | null;
   signup_collected_data: Record<string, unknown> | null;
+  // 채팅 기록을 관리자가 열람하는 것에 대한 동의 여부. 아직 응답 안 했으면 null
+  // (null은 조회 시 "동의 안 함"과 동일하게 취급함 — 안전한 기본값)
+  chat_log_consent: boolean | null;
+  consent_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -65,6 +69,8 @@ const chatSessionSchema = new Schema<IChatSession>(
       default: null,
     },
     signup_collected_data: { type: Schema.Types.Mixed, default: null },
+    chat_log_consent: { type: Boolean, default: null },
+    consent_at: { type: Date, default: null },
   },
   {
     collection: "chat_sessions",
