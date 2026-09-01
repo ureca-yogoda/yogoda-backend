@@ -4,8 +4,10 @@ import {
   activatePromptHandler,
   createPromptHandler,
   getActivePromptHandler,
+  getDraftHandler,
   getPromptDetailHandler,
   getPromptHistoryHandler,
+  saveDraftHandler,
 } from "../controllers/prompt.controller.js";
 import {
   adminMiddleware,
@@ -78,6 +80,126 @@ const router = Router();
  *                   type: string
  */
 router.get("/active", authMiddleware, adminMiddleware, getActivePromptHandler);
+
+/**
+ * @swagger
+ * /api/admin/prompts/draft:
+ *   get:
+ *     summary: 임시저장된 프롬프트 조회
+ *     description: 임시저장된 내용이 없으면 현재 운영 중인 프롬프트를 기본값으로 반환함
+ *     tags: [Admin/Prompts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 조회 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 content:
+ *                   type: string
+ *                 baseVersion:
+ *                   type: string
+ *                   nullable: true
+ *                 updatedAt:
+ *                   type: string
+ *                   format: date-time
+ *                   nullable: true
+ *                 updatedBy:
+ *                   type: string
+ *                   nullable: true
+ *       401:
+ *         description: 인증 실패
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       403:
+ *         description: 관리자가 아님
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ */
+router.get("/draft", authMiddleware, adminMiddleware, getDraftHandler);
+
+/**
+ * @swagger
+ * /api/admin/prompts/draft:
+ *   put:
+ *     summary: 프롬프트 임시저장
+ *     description: 배포하지 않고 편집 중인 내용만 저장함. draft는 하나만 유지됨
+ *     tags: [Admin/Prompts]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - content
+ *             properties:
+ *               content:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: 임시저장 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 content:
+ *                   type: string
+ *                 baseVersion:
+ *                   type: string
+ *                   nullable: true
+ *                 updatedAt:
+ *                   type: string
+ *                   format: date-time
+ *                   nullable: true
+ *                 updatedBy:
+ *                   type: string
+ *                   nullable: true
+ *       400:
+ *         description: 프롬프트 내용 누락
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       401:
+ *         description: 인증 실패
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *       403:
+ *         description: 관리자가 아님
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ */
+router.put("/draft", authMiddleware, adminMiddleware, saveDraftHandler);
 
 /**
  * @swagger

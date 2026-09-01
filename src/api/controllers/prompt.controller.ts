@@ -4,8 +4,10 @@ import {
   activatePromptVersion,
   createAndDeployPrompt,
   getActivePrompt,
+  getDraft,
   getPromptDetail,
   getPromptHistory,
+  saveDraft,
 } from "../../services/prompt.service.js";
 
 export async function getActivePromptHandler(
@@ -93,6 +95,39 @@ export async function getPromptDetailHandler(
     }
 
     res.status(200).json(await getPromptDetail(versionId));
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getDraftHandler(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    res.status(200).json(await getDraft());
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function saveDraftHandler(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const { content } = (req.body ?? {}) as { content?: unknown };
+
+    if (typeof content !== "string" || content.trim() === "") {
+      res.status(400).json({ message: "프롬프트 내용을 입력해주세요." });
+      return;
+    }
+
+    const result = await saveDraft(content, req.user!.userId);
+
+    res.status(200).json(result);
   } catch (error) {
     next(error);
   }
