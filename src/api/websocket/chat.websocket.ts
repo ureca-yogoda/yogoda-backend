@@ -39,9 +39,6 @@ import type {
   SignupStep,
 } from "../../types/chat.js";
 
-const TYPE_CHUNK_SIZE = 8;
-const TYPE_CHUNK_DELAY_MS = 30;
-
 interface ChatMessagePayload {
   message?: string;
   simulateError?: boolean;
@@ -102,18 +99,6 @@ function isUiEventAction(value: unknown): value is UiEventAction {
   return (
     typeof value === "string" && (UI_EVENT_ACTIONS as string[]).includes(value)
   );
-}
-
-async function sendTypedText(
-  socket: Socket,
-  text: string,
-  isStopped: () => boolean,
-) {
-  for (let i = 0; i < text.length; i += TYPE_CHUNK_SIZE) {
-    if (isStopped()) return;
-    socket.emit("chunk", text.slice(i, i + TYPE_CHUNK_SIZE));
-    await new Promise((resolve) => setTimeout(resolve, TYPE_CHUNK_DELAY_MS));
-  }
 }
 
 function resolveConnectionUserId(token: string | undefined): string | null {
@@ -179,6 +164,9 @@ export function setupChatSocket(io: Server) {
     // 현재 요청 id를 기록해, 그 요청에 속한 이후의 emit/DB 처리를 모두 건너뜀
     let activeRequestId: string | null = null;
     let stoppedRequestId: string | null = null;
+    // 진짜 스트리밍으로 바뀌면서 진행 중인 AI 호출을 실제로 중간에 끊을 수 있게 됨.
+    // "stop" 이벤트가 오면 이걸 abort해서 서버가 응답을 계속 생성/전송하는 걸 즉시 멈춤
+    let activeAbortController: AbortController | null = null;
 
     const sessionReady = (async () => {
       const { session } = await resolveChatSession(userId, sessionId);
@@ -219,6 +207,8 @@ export function setupChatSocket(io: Server) {
       const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       activeRequestId = requestId;
       const isStopped = () => stoppedRequestId === requestId;
+      const abortController = new AbortController();
+      activeAbortController = abortController;
 
       if (simulateError) {
         socket.emit("error", "시뮬레이션 에러가 발생했습니다.");
@@ -293,30 +283,41 @@ export function setupChatSocket(io: Server) {
             }
           }
 
-          const { decision, interactionId } = await getSignupDecision({
-            message,
-            previousInteractionId,
-            promptContent,
-            preselectedPlan: {
-              code: plan.code,
-              name: plan.name,
-              monthlyFee: plan.discountFee ?? plan.monthlyFee,
-            },
-            signupCollectedData: currentSignupData,
-            choiceBenefits: (plan.choiceBenefits ?? [])
-              .filter((b) => b.options.length > 0)
-              .map((b) => ({
-                code: b.code,
-                title: b.title,
-                selectionCount: b.selectionCount,
-                required: b.required,
-                options: (b.options ?? []).map((o) => ({
-                  code: o.code,
-                  title: o.title,
-                  description: o.description ?? null,
+          const { decision, interactionId } = await getSignupDecision(
+            {
+              message,
+              previousInteractionId,
+              promptContent,
+              preselectedPlan: {
+                code: plan.code,
+                name: plan.name,
+                monthlyFee: plan.discountFee ?? plan.monthlyFee,
+              },
+              signupCollectedData: currentSignupData,
+              choiceBenefits: (plan.choiceBenefits ?? [])
+                .filter((b) => b.options.length > 0)
+                .map((b) => ({
+                  code: b.code,
+                  title: b.title,
+                  selectionCount: b.selectionCount,
+                  required: b.required,
+                  options: (b.options ?? []).map((o) => ({
+                    code: o.code,
+                    title: o.title,
+                    description: o.description ?? null,
+                  })),
                 })),
-              })),
-          });
+            },
+            (text) => {
+              if (!isStopped()) socket.emit("chunk", text);
+            },
+            () => {
+              // 텍스트 스트리밍은 끝났지만, 카드/퀵답변처럼 뒤에 더 올 수 있는 내용이
+              // 있어서 프론트에 로딩 상태를 명시적으로 알려줌
+              if (!isStopped()) socket.emit("loading_extra");
+            },
+            abortController.signal,
+          );
 
           // 응답을 받아온 시점에 이미 정지됐다면 DB 저장·세션 상태 갱신 없이 버림
           // (저장해버리면 새로고침 시 정지했던 턴이 되살아나고 다음 메시지도 그
@@ -430,8 +431,7 @@ export function setupChatSocket(io: Server) {
           // 가입 단계 퍼널 기록
           await recordConversionEvent(currentSessionId, "signup_started");
 
-          await sendTypedText(socket, decision.message, isStopped);
-
+          // 텍스트는 이미 1차 스트리밍 호출 중에 실시간으로 다 전송됐음
           if (isStopped()) {
             return;
           }
@@ -532,15 +532,26 @@ export function setupChatSocket(io: Server) {
         const currentPlan = userId ? await getCurrentPlan(userId) : null;
         const candidates = await getPlanCandidates(currentPlan?.planCode);
 
-        const { decision, interactionId } = await getChatDecision({
-          message,
-          previousInteractionId,
-          surveyContext,
-          collectedInfo,
-          plans: candidates,
-          promptContent,
-          currentPlanCode: currentPlan?.planCode ?? null,
-        });
+        const { decision, interactionId } = await getChatDecision(
+          {
+            message,
+            previousInteractionId,
+            surveyContext,
+            collectedInfo,
+            plans: candidates,
+            promptContent,
+            currentPlanCode: currentPlan?.planCode ?? null,
+          },
+          (text) => {
+            if (!isStopped()) socket.emit("chunk", text);
+          },
+          () => {
+            // 텍스트 스트리밍은 끝났지만, 카드/퀵답변처럼 뒤에 더 올 수 있는 내용이
+            // 있어서 프론트에 로딩 상태를 명시적으로 알려줌
+            if (!isStopped()) socket.emit("loading_extra");
+          },
+          abortController.signal,
+        );
 
         // 응답을 받아온 시점에 이미 정지됐다면 DB 저장·세션 상태 갱신 없이 버림
         if (isStopped()) {
@@ -575,8 +586,7 @@ export function setupChatSocket(io: Server) {
           socket.emit("info", decision.collectedInfo);
         }
 
-        await sendTypedText(socket, decision.message, isStopped);
-
+        // 텍스트는 이미 1차 스트리밍 호출 중에 실시간으로 다 전송됐음
         if (isStopped()) {
           return;
         }
@@ -591,6 +601,10 @@ export function setupChatSocket(io: Server) {
 
         socket.emit("done");
       } catch (aiError) {
+        // "정지" 버튼으로 abort된 경우는 의도된 취소이지 에러가 아니므로 조용히 무시함
+        if (isStopped()) {
+          return;
+        }
         console.error("AI 채팅 처리 에러:", aiError);
         socket.emit("error", "AI 서버 연결에 실패했습니다.");
       }
@@ -604,6 +618,8 @@ export function setupChatSocket(io: Server) {
       if (activeRequestId) {
         stoppedRequestId = activeRequestId;
       }
+      // 진짜 스트리밍 덕분에 진행 중인 AI 호출 자체를 즉시 끊을 수 있음
+      activeAbortController?.abort();
     });
 
     // 가입 플로우 진입 시 프론트가 화면에 즉시 보여준 안내 문구를 그대로 DB에

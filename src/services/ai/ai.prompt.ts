@@ -4,6 +4,18 @@ import type {
   SurveyContext,
 } from "../../types/chat.js";
 
+/*
+ * 관리자 DB 프롬프트(basePrompt)와 무관하게 매 요청마다 코드로 고정 삽입되는 블록이라
+ * 즉시 적용됨. 굵게(**)와 따옴표를 함께 쓰면, 닫는 ** 바로 뒤에 공백 없이 문자가
+ * 붙는 경우 CommonMark 파서가 강조로 인식하지 못해 **가 그대로 화면에 보이는
+ * 문제가 있어 추가함
+ */
+const MARKDOWN_SAFETY_BLOCK = `[마크다운 안전 규칙]
+- 굵게(**...**) 강조와 따옴표를 같이 쓰지 마세요. 강조하고 싶은 문구는 따옴표 없이
+  굵게만 쓰세요. (예: "**가입 신청하기**"라고 (X) → **가입 신청하기**라고 (O))
+- 닫는 ** 바로 뒤에 공백 없이 조사/문자가 붙으면 굵게 표시가 깨질 수 있으니, 굵게
+  강조 뒤에는 가능하면 띄어쓰기를 하세요.`;
+
 const FIELD_LABELS: Record<keyof SurveyAnswers, string> = {
   usageType: "주 사용 목적",
   monthlyData: "월 데이터 사용량",
@@ -85,6 +97,10 @@ export function buildSystemPrompt(
   plans: PlanCandidate[],
   isFirstTurn: boolean,
   currentPlanCode?: string | null,
+  // "message_only"면 JSON 없이 답변 텍스트만 생성함 (실시간 스트리밍 1차 호출용).
+  // action/collectedInfo/recommendations/quickReplies는 buildChatMetadataPrompt로
+  // 별도 호출에서 받음
+  outputMode: "full" | "message_only" = "full",
 ): string {
   /*
    * 화면 첫 번째 말풍선에 이미 인사 문구가 고정 표시되므로,
@@ -94,7 +110,18 @@ export function buildSystemPrompt(
     ? '[대화 시작]\n- 지금이 이 사용자와의 첫 메시지입니다. 화면에 인사 메시지가 이미 표시되어 있으므로 "반갑습니다", "안녕하세요" 같은 인사말은 절대 쓰지 마세요. 인사 없이 바로 첫 질문으로 시작하세요.'
     : '[대화 시작]\n- 지금은 첫 메시지가 아니라 이미 진행 중인 대화의 다음 턴입니다. "반갑습니다", "안녕하세요" 같은 인사말을 다시 사용하지 마세요. 인사 없이 바로 이어서 답하거나 다음 질문으로 넘어가세요.';
 
-  const responseFormatBlock = `[응답 형식]
+  const responseFormatBlock =
+    outputMode === "message_only"
+      ? `[응답 형식 - 매우 중요]
+사용자에게 그대로 보여줄 답변 텍스트만 마크다운으로 작성하세요. 아래 [빠른 답변
+(quickReplies) 규칙] 등 다른 지시에 JSON 형식이나 필드 예시가 나오더라도, 그건 백엔드
+내부 참고용일 뿐 이번 응답에 그대로 옮겨 적으라는 뜻이 아닙니다.
+절대 하지 말아야 할 것:
+- JSON, 중괄호({}), 대괄호([]) 형식을 답변에 포함하지 마세요.
+- "action", "collectedInfo", "recommendations", "quickReplies" 같은 필드 이름이나 그
+  값을 텍스트로 언급/나열하지 마세요.
+이 필드들은 이번 응답과 별개로, 시스템이 당신의 답변을 보고 알아서 판단합니다.`
+      : `[응답 형식]
 아래 스키마를 따르는 JSON으로만 응답하세요:
 - action: "ask"(질문을 더 해야 함) 또는 "recommend"(추천할 준비가 됨)
 - message: 사용자에게 보여줄 마크다운 텍스트 (질문 또는 추천 안내 멘트)
@@ -121,11 +148,58 @@ ${turnBlock}
 
 ${responseFormatBlock}
 
+${MARKDOWN_SAFETY_BLOCK}
+
 ${knownInfoBlock}
 
 ${currentPlanBlock}
 
 ${analysisBlock}
+
+${planBlock}
+`.trim();
+}
+
+/*
+ * 실시간 스트리밍 2차 호출(메타데이터 전용) 프롬프트.
+ * previous_interaction_id로 1차(buildSystemPrompt, message_only) 호출에 이어붙여서
+ * 부르므로, 방금 한 답변을 다시 텍스트로 받지 않고 action/collectedInfo/
+ * recommendations/quickReplies 판단 결과만 JSON으로 받음
+ */
+export function buildChatMetadataPrompt(
+  basePrompt: string,
+  surveyContext: SurveyContext | undefined,
+  collectedInfo: SurveyAnswers | undefined,
+  plans: PlanCandidate[],
+  currentPlanCode?: string | null,
+): string {
+  const responseFormatBlock = `[응답 형식]
+새 대화 텍스트를 만들지 마세요. 바로 앞에서 당신이 한 답변을 그대로 근거로 삼아,
+아래 스키마를 따르는 JSON으로만 응답하세요:
+- action: "ask"(질문을 더 해야 함) 또는 "recommend"(추천할 준비가 됨)
+- collectedInfo: 위 [collectedInfo 응답 규칙]을 따르는, 지금까지 파악된 정보 전체
+- recommendations: action이 "recommend"일 때만, 선택한 요금제의 code / matchRate(0~100 정수) / reason(한 문장 추천 이유)
+- quickReplies: 위 [빠른 답변(quickReplies) 규칙]을 따르는 문자열 배열`;
+
+  const knownInfoBlock = formatKnownInfo(surveyContext?.answers, collectedInfo);
+  const planBlock = formatPlanCatalog(plans);
+  const currentPlanBlock = currentPlanCode
+    ? `[현재 가입 요금제 - 추천 금지]\n- planCode: ${currentPlanCode}\n(이 요금제는 이미 이용 중이므로 recommendations 배열에 절대 포함하지 마세요)`
+    : `[현재 가입 요금제]\n없음 (미가입 또는 비회원)`;
+
+  return `
+${basePrompt}
+
+[정리 전용 턴 - 매우 중요]
+이 요청은 사용자에게 보이는 실제 대화가 아니라, 바로 앞 답변을 시스템이 구조화된
+데이터로 정리하기 위한 내부 요청입니다. 새 인사말이나 새 질문을 만들지 말고, 방금 한
+답변 내용을 그대로 근거로 판단만 하세요. 이후 대화에서 이 정리 요청을 언급하지 마세요.
+
+${responseFormatBlock}
+
+${knownInfoBlock}
+
+${currentPlanBlock}
 
 ${planBlock}
 `.trim();
@@ -292,6 +366,9 @@ export function buildSignupSystemPrompt(
   preselectedPlan: { code: string; name: string; monthlyFee: number },
   signupCollectedData: Record<string, unknown> | undefined,
   choiceBenefitsBlock: string,
+  // "message_only"면 JSON 없이 답변 텍스트만 생성함 (실시간 스트리밍 1차 호출용).
+  // signupStep/signupData/quickReplies 판단은 buildSignupMetadataPrompt로 별도 호출에서 받음
+  outputMode: "full" | "message_only" = "full",
 ): string {
   const collectedLines = signupCollectedData
     ? Object.entries(signupCollectedData)
@@ -300,7 +377,18 @@ export function buildSignupSystemPrompt(
         .join("\n")
     : "아직 없음";
 
-  const responseFormatBlock = `[응답 형식]
+  const responseFormatBlock =
+    outputMode === "message_only"
+      ? `[응답 형식 - 매우 중요]
+사용자에게 그대로 보여줄 안내/질문 문장만 마크다운으로 작성하세요. 위 [가입 단계 순서]에
+각 단계별로 적힌 "quickReplies: [...]" 표기는 백엔드 내부 참고용 예시일 뿐, 그 텍스트나
+형식을 답변에 그대로 옮겨 적으라는 뜻이 아닙니다.
+절대 하지 말아야 할 것:
+- JSON, 중괄호({}), 대괄호([]) 형식을 답변에 포함하지 마세요.
+- "action", "signupStep", "signupData", "quickReplies" 같은 필드 이름이나 그 값을
+  텍스트로 언급/나열하지 마세요 (예: 'quickReplies: [...]' 같은 줄을 절대 쓰지 마세요).
+이 필드들은 이번 응답과 별개로, 시스템이 당신의 답변을 보고 알아서 판단합니다.`
+      : `[응답 형식]
 아래 스키마를 따르는 JSON으로만 응답하세요:
 - action: 반드시 "signup"
 - signupStep: 다음에 처리할 단계 이름 (문자열)
@@ -312,6 +400,59 @@ export function buildSignupSystemPrompt(
 ${basePrompt}
 
 ${SIGNUP_PROMPT_SECTION}
+
+${responseFormatBlock}
+
+${MARKDOWN_SAFETY_BLOCK}
+
+[가입 대상 요금제]
+- code: ${preselectedPlan.code}
+- name: ${preselectedPlan.name}
+- 월 요금: ${preselectedPlan.monthlyFee.toLocaleString("ko-KR")}원
+
+[현재까지 수집된 가입 정보]
+${collectedLines}
+
+${choiceBenefitsBlock}
+`.trim();
+}
+
+/*
+ * 실시간 스트리밍 2차 호출(메타데이터 전용) 프롬프트.
+ * previous_interaction_id로 1차(buildSignupSystemPrompt, message_only) 호출에
+ * 이어붙여서 부르므로, 방금 한 답변을 다시 텍스트로 받지 않고 signupStep/signupData/
+ * quickReplies 판단 결과만 JSON으로 받음
+ */
+export function buildSignupMetadataPrompt(
+  basePrompt: string,
+  preselectedPlan: { code: string; name: string; monthlyFee: number },
+  signupCollectedData: Record<string, unknown> | undefined,
+  choiceBenefitsBlock: string,
+): string {
+  const collectedLines = signupCollectedData
+    ? Object.entries(signupCollectedData)
+        .filter(([, v]) => v !== undefined && v !== null)
+        .map(([k, v]) => `- ${k}: ${JSON.stringify(v)}`)
+        .join("\n")
+    : "아직 없음";
+
+  const responseFormatBlock = `[응답 형식]
+새 대화 텍스트를 만들지 마세요. 바로 앞에서 당신이 한 답변을 그대로 근거로 삼아,
+아래 스키마를 따르는 JSON으로만 응답하세요:
+- action: 반드시 "signup"
+- signupStep: 바로 앞 답변이 어느 단계에 해당하는지 (다음에 처리할 단계 이름, 문자열)
+- signupData: 지금까지 누적된 가입 정보 전체 (매 턴 전체를 반환)
+- quickReplies: 이 단계에서 제시할 빠른 답변 후보 배열`;
+
+  return `
+${basePrompt}
+
+${SIGNUP_PROMPT_SECTION}
+
+[정리 전용 턴 - 매우 중요]
+이 요청은 사용자에게 보이는 실제 대화가 아니라, 바로 앞 답변을 시스템이 구조화된
+데이터로 정리하기 위한 내부 요청입니다. 새 인사말이나 새 질문을 만들지 말고, 방금 한
+답변 내용을 그대로 근거로 판단만 하세요. 이후 대화에서 이 정리 요청을 언급하지 마세요.
 
 ${responseFormatBlock}
 
