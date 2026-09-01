@@ -199,6 +199,75 @@ function createDelimiterFilteredOnChunk(onChunk: (text: string) => void) {
 }
 
 /*
+ * 가입 플로우의 message_only 호출은 "JSON을 절대 쓰지 말라"고 프롬프트로 명시했는데도,
+ * 모델이 답변 뒤에 { "action": "signup", ... } 같은 메타데이터 JSON을 그대로 이어붙여
+ * 쓰는 경우가 있었음(실제 signupStep 판단은 어차피 이 JSON이 아니라 별도 2차 메타데이터
+ * 호출로 하므로, 이 JSON은 화면에 노출되기만 하는 순수 부작용). "{" 뒤에 정확히
+ * "action" 필드가 이어지는 패턴이 보이면 그 지점부터는 화면으로도, 최종 저장될
+ * 텍스트로도 포함하지 않음. 패턴이 아니라고 판명되면(오탐 방지) 원래대로 전부 흘려보냄
+ */
+function createSignupJsonLeakFilteredOnChunk(onChunk: (text: string) => void) {
+  let pending = "";
+  let clean = "";
+  let suppressed = false;
+  const SENTINEL = /^\{\s*"action"\s*:/;
+  const MAX_HOLD = 40;
+
+  function tryFlush(isFinal: boolean) {
+    if (suppressed) return;
+    const braceIdx = pending.indexOf("{");
+    if (braceIdx === -1) {
+      clean += pending;
+      if (pending) onChunk(pending);
+      pending = "";
+      return;
+    }
+
+    const before = pending.slice(0, braceIdx);
+    const after = pending.slice(braceIdx);
+
+    if (SENTINEL.test(after)) {
+      if (before) {
+        clean += before;
+        onChunk(before);
+      }
+      suppressed = true;
+      pending = "";
+      return;
+    }
+
+    // 스트림이 끝났거나(더 올 데이터가 없음) 충분히 모았는데도 패턴이 아니면
+    // 오탐이었던 것으로 보고 보류했던 것까지 그대로 다 흘려보냄
+    if (isFinal || after.length >= MAX_HOLD) {
+      clean += pending;
+      if (pending) onChunk(pending);
+      pending = "";
+      return;
+    }
+
+    if (before) {
+      clean += before;
+      onChunk(before);
+      pending = after;
+    }
+  }
+
+  return {
+    onChunk: (raw: string) => {
+      if (suppressed) return;
+      pending += raw;
+      tryFlush(false);
+    },
+    // 스트림 종료 후 호출. 화면에 이미 나간 텍스트와 항상 같은 값을 반환해서
+    // DB 저장/재접속 시 복원 텍스트가 어긋나지 않게 함
+    finish: (): string => {
+      tryFlush(true);
+      return clean;
+    },
+  };
+}
+
+/*
  * 스트림이 끝난 뒤, 누적된 전체 텍스트를 AI_META_DELIMITER 기준으로 답변/메타데이터로
  * 나눔. 델리미터를 못 찾거나 JSON 파싱에 실패해도 답변 텍스트 자체는 이미 스트리밍이
  * 끝난 유효한 값이므로, 메타데이터만 안전한 기본값으로 채워서 턴 전체를 실패시키지 않음
@@ -673,6 +742,8 @@ export async function getSignupDecision(
     `[가입 AI] 1차(스트리밍) previous_interaction_id=${previousInteractionId ?? "(없음)"}`,
   );
 
+  const jsonLeakFilter = createSignupJsonLeakFilteredOnChunk(onChunk);
+
   let streamResult: StreamInteractionResult;
   try {
     streamResult = await streamInteractionMessage(
@@ -682,7 +753,7 @@ export async function getSignupDecision(
         previousInteractionId,
         systemInstruction: messageSystemInstruction,
       },
-      onChunk,
+      jsonLeakFilter.onChunk,
       signal,
     );
   } catch (err) {
@@ -708,6 +779,10 @@ export async function getSignupDecision(
     logAiError("[가입 AI] 1차(스트리밍) 에러", err);
     throw new Error("AI_REQUEST_FAILED");
   }
+
+  // 화면에 이미 흘려보낸 텍스트와 항상 같은 값이 되도록, JSON 누출 부분을 뺀
+  // 정리된 텍스트를 사용함 (streamResult.text는 누출된 JSON까지 그대로 들어있음)
+  const cleanMessage = jsonLeakFilter.finish();
 
   onMessageComplete();
 
@@ -762,7 +837,7 @@ export async function getSignupDecision(
 
   try {
     const metadata = JSON.parse(rawText) as Omit<ChatDecision, "message">;
-    const decision: ChatDecision = { ...metadata, message: streamResult.text };
+    const decision: ChatDecision = { ...metadata, message: cleanMessage };
     return { decision, interactionId };
   } catch {
     console.error("[가입 AI] JSON 파싱 실패:", rawText);

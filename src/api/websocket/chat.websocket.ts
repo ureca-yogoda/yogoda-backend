@@ -300,7 +300,7 @@ export function setupChatSocket(io: Server) {
               "가입을 진행하기 전에 먼저 개통 사기 예방을 위한 안내를 드릴게요.\n\n" +
               "휴대폰·유심 개통 목적을 반드시 직접 확인하시고, 타인에게 양도하거나 " +
               "금융 사기에 이용되는 경우 법적 책임이 발생할 수 있습니다.\n\n" +
-              "안내 내용을 확인하셨다면 채팅으로 확인했다고 말씀해 주세요.";
+              "안내 내용을 확인하셨다면 아래 버튼을 누르거나, 채팅으로 확인했다고 말씀해 주세요.";
 
             if (!isStopped()) {
               socket.emit("chunk", fraudWarningMessage);
@@ -336,6 +336,7 @@ export function setupChatSocket(io: Server) {
               signupStep: "fraud_warning",
               signupData: currentSignupData ?? {},
             });
+            socket.emit("quickReplies", ["확인했어요"]);
             socket.emit("done");
             return;
           }
