@@ -3,6 +3,7 @@ import { Router } from "express";
 import {
   listNotifications,
   readNotification,
+  readAllNotifications,
   deleteNotification,
 } from "../controllers/notification.controller.js";
 import { authMiddleware } from "../../core/middlewares/auth.middleware.js";
@@ -88,6 +89,23 @@ router.get("/", authMiddleware, listNotifications);
  *         description: 인증 실패
  */
 router.patch("/:notificationId/read", authMiddleware, readNotification);
+
+/**
+ * @openapi
+ * /api/notifications/read-all:
+ *   patch:
+ *     summary: 안 읽은 알림 전체 읽음 처리
+ *     description: 화면에 보이는 최근 알림뿐 아니라, 그보다 이전에 쌓인 안 읽은 알림까지 전부 읽음 처리합니다.
+ *     tags: [Notifications]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 읽음 처리 완료
+ *       401:
+ *         description: 인증 실패
+ */
+router.patch("/read-all", authMiddleware, readAllNotifications);
 
 /**
  * @openapi
