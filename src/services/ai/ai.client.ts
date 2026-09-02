@@ -218,6 +218,11 @@ const SIGNUP_LEAK_MARKERS = [
   '"action"',
   "[이미 파악된 정보]",
   "[가입 진행 정보]",
+  // 필드 이름 마커는 JSON이 이미 상당히 진행된 뒤에야 나타나서, 그 앞의 여는 중괄호
+  // "{"까지는 "마커 이전 텍스트"로 취급돼 화면에 그대로 노출되는 문제가 있었음. 이
+  // 답변은 자연어 안내문이라 "{"가 정상적으로 등장할 일이 없으므로, 중괄호 자체를
+  // 가장 이른 누출 신호로 추가함
+  "{",
 ];
 const SIGNUP_LEAK_MAX_MARKER_LEN = Math.max(
   ...SIGNUP_LEAK_MARKERS.map((m) => m.length),

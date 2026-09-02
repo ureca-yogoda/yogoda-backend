@@ -327,7 +327,7 @@ export function setupChatSocket(io: Server) {
               "가입을 진행하기 전에 먼저 개통 사기 예방을 위한 안내를 드릴게요.\n\n" +
               "휴대폰·유심 개통 목적을 반드시 직접 확인하시고, 타인에게 양도하거나 " +
               "금융 사기에 이용되는 경우 법적 책임이 발생할 수 있습니다.\n\n" +
-              "안내 내용을 확인하셨다면 아래 버튼을 누르거나, 채팅으로 확인했다고 말씀해 주세요.";
+              "안내 내용을 확인하셨다면 아래 '확인했어요'를 눌러주시거나, 채팅으로 확인했다고 말씀해 주세요.";
 
             if (!isStopped()) {
               socket.emit("chunk", fraudWarningMessage);
@@ -438,9 +438,12 @@ export function setupChatSocket(io: Server) {
           const gate = currentSignupStep
             ? GATED_SIGNUP_STEPS[currentSignupStep]
             : undefined;
+          // "paused"로 잠깐 벗어나는 건 다음 단계로의 진행이 아니라 제자리에
+          // 머무는 것과 같으므로, 이 결정론적 검증 대상에서 제외함
           if (
             gate &&
             decision.signupStep !== currentSignupStep &&
+            decision.signupStep !== "paused" &&
             !message.trim().startsWith(gate.triggerPrefix)
           ) {
             decision.signupStep = currentSignupStep as SignupStep;
@@ -452,6 +455,28 @@ export function setupChatSocket(io: Server) {
             // 말풍선에 교정 안내를 실시간으로 이어붙여 화면과 실제 상태를 일치시킴
             if (!isStopped()) {
               socket.emit("chunk", nudgeText);
+            }
+          }
+
+          // paused 상태에서는 저장해둔 pausedStep으로만 복귀할 수 있음 — AI가
+          // 엉뚱한 단계로 바로 건너뛰는 걸 결정론적으로 막음(재개 의사가 없으면
+          // paused를 그대로 유지)
+          if (currentSignupStep === "paused") {
+            const pausedStep = currentSignupData?.pausedStep as
+              SignupStep | undefined;
+            // "가입 계속하기"는 이 기능이 직접 제시하는 quickReply 고정 문구라
+            // 사용자가 이걸 그대로 보냈다면 재개 의사가 명확함. 메시지 텍스트는
+            // 이미 fraud_warning 안내처럼 잘 나오는데도, 별도 호출인 메타데이터
+            // 판단이 이를 놓쳐 signupStep이 "paused"에 머무는 경우가 있어서
+            // (텍스트↔메타데이터 어긋남), 이 정해진 문구만큼은 AI 판단에 기대지
+            // 않고 결정론적으로 복귀시킴
+            if (message.trim() === "가입 계속하기") {
+              decision.signupStep = pausedStep ?? "paused";
+            } else if (
+              decision.signupStep !== "paused" &&
+              decision.signupStep !== pausedStep
+            ) {
+              decision.signupStep = pausedStep ?? "paused";
             }
           }
 
@@ -567,9 +592,10 @@ export function setupChatSocket(io: Server) {
             signupData: decision.signupData,
           });
 
-          if (decision.quickReplies?.length) {
-            socket.emit("quickReplies", decision.quickReplies);
-          }
+          // 빈 배열이어도 항상 emit함 — 이전 턴 값을 그대로 두면, 이번 턴엔
+          // 퀵답변이 없다고 AI가 판단했을 때 프론트가 그 사실을 못 받아 이전
+          // 턴의 칩이 화면에 그대로 남아있는 문제가 있었음
+          socket.emit("quickReplies", decision.quickReplies ?? []);
 
           // 가입 완료 처리
           if (decision.signupStep === "completed" && userId) {
@@ -719,8 +745,10 @@ export function setupChatSocket(io: Server) {
           socket.emit("plans", cards);
         }
 
-        if (decision.action === "ask" && decision.quickReplies?.length) {
-          socket.emit("quickReplies", decision.quickReplies);
+        // 빈 배열이어도 항상 emit함 — 그래야 이번 턴에 퀵답변이 없다는 것도
+        // 프론트에 전달되어, 이전 턴 칩이 화면에 남아있지 않음
+        if (decision.action === "ask") {
+          socket.emit("quickReplies", decision.quickReplies ?? []);
         }
 
         socket.emit("done");
