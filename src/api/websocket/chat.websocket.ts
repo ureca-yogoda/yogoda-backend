@@ -47,6 +47,10 @@ interface ChatMessagePayload {
   surveyContext?: SurveyContext;
   // 가입 플로우 전용
   preselectedPlanCode?: string;
+  // 이 요금제가 이 세션에서 AI가 실제로 추천한 것인지 여부. 요금제 탐색 페이지에서
+  // 혼자 찾은 요금제로 가입을 시도해도 preselectedPlanCode 자체는 똑같이 오기 때문에,
+  // 퍼널(가입 전환) 집계를 "AI 추천으로 인한 전환"만으로 한정하려면 이 값으로 걸러야 함
+  recommendedByAI?: boolean;
   isKickoff?: boolean;
   signupCollectedData?: SignupCollectedData;
   // 이번 메시지를 보내기 직전, 프론트가 알고 있던 가입 단계. 약관 동의처럼
@@ -210,6 +214,7 @@ export function setupChatSocket(io: Server) {
         simulateError,
         surveyContext,
         preselectedPlanCode,
+        recommendedByAI = false,
         isKickoff = false,
         signupCollectedData: clientSignupData,
         currentSignupStep,
@@ -357,7 +362,12 @@ export function setupChatSocket(io: Server) {
               currentSignupData ?? {},
             );
             signupCollectedData = currentSignupData ?? {};
-            await recordConversionEvent(currentSessionId, "signup_started");
+            // AI가 이 세션에서 실제로 추천한 요금제로 가입할 때만 "AI 추천 전환"으로 집계함.
+            // 탐색 페이지에서 혼자 찾은 요금제도 preselectedPlanCode는 똑같이 실려오므로,
+            // 이 플래그 없이 무조건 기록하면 AI와 무관한 가입까지 전환으로 잡혀버림
+            if (recommendedByAI) {
+              await recordConversionEvent(currentSessionId, "signup_started");
+            }
 
             socket.emit("signup", {
               signupStep: "fraud_warning",
@@ -552,8 +562,10 @@ export function setupChatSocket(io: Server) {
           await updateLastInteractionId(currentSessionId, interactionId);
           previousInteractionId = interactionId;
 
-          // 가입 단계 퍼널 기록
-          await recordConversionEvent(currentSessionId, "signup_started");
+          // 가입 단계 퍼널 기록 (AI 추천으로 시작된 가입만 집계)
+          if (recommendedByAI) {
+            await recordConversionEvent(currentSessionId, "signup_started");
+          }
 
           // 텍스트는 이미 1차 스트리밍 호출 중에 실시간으로 다 전송됐음
           if (isStopped()) {
@@ -613,10 +625,13 @@ export function setupChatSocket(io: Server) {
               });
 
               try {
-                await recordConversionEvent(
-                  currentSessionId,
-                  "signup_completed",
-                );
+                // AI 추천으로 시작된 가입만 "전환"으로 집계함
+                if (recommendedByAI) {
+                  await recordConversionEvent(
+                    currentSessionId,
+                    "signup_completed",
+                  );
+                }
 
                 // signup_complete 카드 DB 저장
                 await saveMessage(
