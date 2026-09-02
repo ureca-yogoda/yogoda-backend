@@ -66,6 +66,7 @@ const router = Router();
  *                     maxDropStage:
  *                       type: string
  *                       nullable: true
+ *                       description: 바로 직전 동일 길이 구간 대비 이번 기간 dropRate가 가장 나빠진 단계 (절대값 최대가 아님)
  *                     stages:
  *                       type: array
  *                       items:
@@ -82,6 +83,13 @@ const router = Router();
  *                           dropRate:
  *                             type: number
  *                             nullable: true
+ *                           baselineDropRate:
+ *                             type: number
+ *                             nullable: true
+ *                             description: 바로 직전 동일 길이 구간(previousRange) 기준의 dropRate
+ *                           baselineCount:
+ *                             type: number
+ *                             description: baselineDropRate 계산에 쓰인 표본 수. 작으면 baselineDropRate를 신뢰하기 어려움
  *                 promptConversion:
  *                   type: array
  *                   items:
