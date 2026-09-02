@@ -260,6 +260,21 @@ export async function claimGuestSession(userId: string, sessionId: string) {
   );
 }
 
+/**
+ * 채팅 기록을 관리자가 열람하는 것에 대한 사용자 동의를 기록합니다.
+ * 동의하지 않아도 채팅 자체는 계속 이용할 수 있으며, 이 값은 관리자 채팅 로그
+ * 상세 조회 시에만 영향을 줍니다.
+ */
+export async function recordChatLogConsent(
+  sessionId: string,
+  consented: boolean,
+) {
+  await ChatSessionModel.updateOne(
+    { _id: sessionId },
+    { $set: { chat_log_consent: consented, consent_at: new Date() } },
+  );
+}
+
 // ─── 가입 플로우 데이터 저장 ───────────────────────────────────────────────────
 
 /**
