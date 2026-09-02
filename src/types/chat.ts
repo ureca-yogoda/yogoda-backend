@@ -58,7 +58,8 @@ export type SignupStep =
   | "select_benefits" // 선택형 혜택 (choiceBenefits가 있는 요금제만)
   | "select_payment" // 요금납부 방법 선택
   | "final_confirm" // 가입 내용 최종 확인
-  | "completed"; // 가입 완료 → DB 업데이트
+  | "completed" // 가입 완료 → DB 업데이트
+  | "paused"; // 사용자가 가입 단계와 무관한 이야기를 해서 잠시 대화를 벗어난 상태
 
 /** AI가 가입 단계마다 수집·누적하는 정보 */
 export interface SignupCollectedData {
@@ -71,6 +72,8 @@ export interface SignupCollectedData {
   /** choiceBenefit stepCode → 선택한 optionCode 배열 */
   selectedBenefits?: Record<string, string[]>;
   paymentMethod?: "계좌이체" | "신용카드";
+  /** signupStep이 "paused"일 때, 재개하면 돌아갈 원래 단계 */
+  pausedStep?: SignupStep;
 }
 
 // ─── AI 응답 ──────────────────────────────────────────────────────────────────
