@@ -2,7 +2,7 @@
 
 Yogoda의 인증, AI 통신 상담, 요금제 가입, 혜택과 리워드, 사용 패턴 분석 및 관리자 기능을 제공하는 Express API 서버입니다.
 
-- 개발 기간: 2026.07.14 - 2026.09.03
+- 개발 기간: 2026.08.14 - 2026.09.03
 - Frontend: [yogoda-frontend](https://github.com/ureca-yogoda/yogoda-frontend)
 
 ## 주요 기능
