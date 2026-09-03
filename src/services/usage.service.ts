@@ -5,6 +5,7 @@ import { UserUsageSummaryModel } from "../models/user-usage-summary.model.js";
 import { AppError } from "../utils/AppError.js";
 import { env } from "../core/config/env.js";
 import { addMySubscription } from "./subscription.service.js";
+import { notifyUsagePatternChanged } from "./notification.service.js";
 import {
   recommendPlanFromUsageWithAI,
   type UsageRecommendationDecision,
@@ -39,9 +40,10 @@ const scenarioUsage = {
     { data: 72.4, calls: 318, tethering: 14.2 },
     { data: 68.1, calls: 296, tethering: 12.8 },
     { data: 74.8, calls: 304, tethering: 15.1 },
-    { data: 45.2, calls: 241, tethering: 8.1 },
+    // 최근 평균 34.7GB에 15% 여유를 더해도 40GB 요금제가 후보에 포함됩니다.
+    { data: 40.2, calls: 241, tethering: 8.1 },
     { data: 34.1, calls: 205, tethering: 5.6 },
-    { data: 28.7, calls: 181, tethering: 4.2 },
+    { data: 29.7, calls: 181, tethering: 4.2 },
   ],
 } satisfies Record<
   DemoUsageScenario,
@@ -244,7 +246,12 @@ export async function applyDemoUsageScenario(
   );
   await syncDemoSubscriptions(userId, scenario);
 
-  return getMyUsageReport(userId, false, scenario);
+  const report = await getMyUsageReport(userId, false, scenario);
+  if (scenario === "usage-drop") {
+    await notifyUsagePatternChanged(userId, report.period);
+  }
+
+  return report;
 }
 
 export async function getMyUsageReport(

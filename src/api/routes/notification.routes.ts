@@ -2,6 +2,7 @@ import { Router } from "express";
 
 import {
   listNotifications,
+  readAllNotifications,
   readNotification,
   readAllNotifications,
   deleteNotification,
@@ -21,7 +22,7 @@ const router = Router();
  *           type: string
  *         type:
  *           type: string
- *           enum: [coupon_expiring, attendance_reminder, consultation_incomplete]
+ *           enum: [coupon_expiring, attendance_reminder, consultation_incomplete, usage_pattern_changed]
  *         title:
  *           type: string
  *         body:
@@ -65,6 +66,23 @@ const router = Router();
  *         description: 인증 실패
  */
 router.get("/", authMiddleware, listNotifications);
+
+/**
+ * @openapi
+ * /api/notifications/read-all:
+ *   patch:
+ *     summary: 안 읽은 알림 전체 읽음 처리
+ *     description: 목록에 보이지 않는 이전 알림까지 로그인 사용자의 안 읽은 알림을 모두 읽음 처리합니다.
+ *     tags: [Notifications]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 전체 읽음 처리 완료
+ *       401:
+ *         description: 인증 실패
+ */
+router.patch("/read-all", authMiddleware, readAllNotifications);
 
 /**
  * @openapi

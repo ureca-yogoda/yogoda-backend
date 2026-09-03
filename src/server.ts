@@ -21,6 +21,7 @@ import { setupNotificationSocket } from "./api/websocket/notification.websocket.
 import notificationRoutes from "./api/routes/notification.routes.js";
 import subscriptionRoutes from "./api/routes/subscription.routes.js";
 import usageRoutes from "./api/routes/usage.routes.js";
+import personaRoutes from "./api/routes/persona.routes.js";
 import { assertRequiredEnv, env, loadSecrets } from "./core/config/env.js";
 import { swaggerSpec } from "./core/config/swagger.js";
 import { connectDB } from "./core/db/mongoose.js";
@@ -59,6 +60,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
 app.use("/api/usage", usageRoutes);
+app.use("/api/persona", personaRoutes);
 
 app.use(errorHandler);
 
