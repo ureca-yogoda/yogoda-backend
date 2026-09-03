@@ -134,6 +134,35 @@ function isUiEventAction(value: unknown): value is UiEventAction {
   );
 }
 
+type ChoiceBenefitLike = {
+  code: string;
+  title: string;
+  options: { code: string; title: string }[];
+};
+
+/**
+ * 선택형 혜택의 선택지 code를 사람이 읽을 수 있는 제목으로 바꿔줌 (카테고리 제목 →
+ * 선택한 옵션 제목 목록). 최종 확인 카드 표시, 현재 가입 요금제 안내(프롬프트) 양쪽에서
+ * 재사용됨
+ */
+function resolveSelectedBenefitTitles(
+  selectedOptions: Record<string, string[]> | undefined,
+  choiceBenefits: ChoiceBenefitLike[] | undefined,
+): Record<string, string[]> {
+  if (!selectedOptions) return {};
+
+  const resolved: Record<string, string[]> = {};
+  for (const [stepCode, optionCodes] of Object.entries(selectedOptions)) {
+    const step = (choiceBenefits ?? []).find((b) => b.code === stepCode);
+    const stepLabel = step?.title ?? stepCode;
+    resolved[stepLabel] = optionCodes.map(
+      (optionCode) =>
+        step?.options.find((o) => o.code === optionCode)?.title ?? optionCode,
+    );
+  }
+  return resolved;
+}
+
 function resolveConnectionUserId(token: string | undefined): string | null {
   if (!token) return null;
   try {
@@ -322,6 +351,119 @@ export function setupChatSocket(io: Server) {
           if (!plan) {
             socket.emit("error", "요금제를 찾을 수 없습니다.");
             return;
+          }
+
+          const planSnapshot = {
+            code: plan.code,
+            name: plan.name,
+            monthlyFee: plan.discountFee ?? plan.monthlyFee,
+          };
+
+          // "가입 신청하기" 확정 시의 실제 가입 처리. AI 판단 경로와 아래 결정론적
+          // 단축 경로 양쪽에서 재사용하기 위해 함수로 분리함
+          async function completeSignup() {
+            // preselectedPlanCode가 있는 분기 안에서만 호출되지만, 클로저 캡처값이라
+            // TS가 못 좁혀서 다시 확인함
+            if (!userId || !preselectedPlanCode) return;
+
+            const sd = signupCollectedData as SignupCollectedData | undefined;
+            const selectedBenefits =
+              (sd?.selectedBenefits as Record<string, string[]> | undefined) ??
+              {};
+            const paymentMethod = sd?.paymentMethod ?? "신용카드";
+
+            console.log("[가입 DB] 시도:", {
+              userId,
+              planCode: preselectedPlanCode,
+              selectedBenefits,
+              paymentMethod,
+            });
+
+            try {
+              try {
+                await subscribeUserToPlan({
+                  userId,
+                  planCode: preselectedPlanCode,
+                  selectedOptions: selectedBenefits,
+                  paymentMethod,
+                });
+              } catch (subscribeError) {
+                // DB 반영 직후 연결이 끊겨 완료 이벤트만 유실된 경우의 재시도는
+                // 이미 같은 요금제를 이용 중이면 성공으로 간주합니다.
+                const currentPlan = await getCurrentPlan(userId);
+                if (currentPlan?.planCode !== preselectedPlanCode) {
+                  throw subscribeError;
+                }
+              }
+
+              // 요금제 변경 자체가 성공하면 즉시 완료 화면을 표시합니다.
+              // 퍼널/대화 기록 실패가 실제 가입 성공을 UI 오류로 뒤집으면 안 됩니다.
+              socket.emit("signup_complete", {
+                planCode: preselectedPlanCode,
+                planName: plan.name,
+                monthlyFee: plan.discountFee ?? plan.monthlyFee,
+                paymentMethod,
+              });
+
+              try {
+                // AI 추천으로 시작된 가입만 "전환"으로 집계함
+                if (recommendedByAI) {
+                  await recordConversionEvent(
+                    currentSessionId,
+                    "signup_completed",
+                  );
+                }
+
+                // signup_complete 카드 DB 저장
+                await saveMessage(
+                  currentSessionId,
+                  "ai",
+                  "",
+                  undefined,
+                  "signup_complete",
+                  undefined,
+                  planSnapshot,
+                );
+
+                // 가입 완료 후 signupData 초기화 (재가입 시 정보 재수집을 위해)
+                signupCollectedData = undefined;
+                await updateSignupCollectedData(currentSessionId, {});
+              } catch (postSignupError) {
+                console.error("가입 완료 후 기록 처리 에러:", postSignupError);
+              }
+
+              console.log(
+                `✅ 가입 완료: userId=${userId}, plan=${preselectedPlanCode}`,
+              );
+            } catch (err) {
+              const errMsg = err instanceof Error ? err.message : String(err);
+              console.error("가입 DB 처리 에러:", errMsg, err);
+              socket.emit("error", "가입 처리 중 오류가 발생했습니다.");
+            }
+          }
+
+          // 최종 확인 카드는 혜택 코드(genie-music) 대신 제목(지니뮤직)을 보여줘야 함 —
+          // 실제 가입 처리는 계속 코드 그대로의 signupData를 쓰므로, 카드 표시용
+          // 스냅샷에만 적용함
+          function resolveBenefitTitlesForDisplay(
+            signupData: Record<string, unknown>,
+          ): Record<string, unknown> {
+            const selected = signupData.selectedBenefits as
+              Record<string, string[]> | undefined;
+            if (!selected) return signupData;
+
+            const resolved: Record<string, string[]> = {};
+            for (const [stepCode, optionCodes] of Object.entries(selected)) {
+              const step = (plan.choiceBenefits ?? []).find(
+                (b) => b.code === stepCode,
+              );
+              resolved[stepCode] = optionCodes.map((optionCode) => {
+                const option = step?.options.find((o) => o.code === optionCode);
+                return option?.title ?? optionCode;
+              });
+            }
+
+            return { ...signupData, selectedBenefits: resolved };
           }
 
           // 로그인 사용자가 이미 동일 요금제를 이용 중이면 가입 차단
@@ -743,6 +885,80 @@ export function setupChatSocket(io: Server) {
             return;
           }
 
+          // 납부 방법 버튼을 정확히 그대로 탭하면 AI 호출 없이 즉시 최종 확인으로 넘김
+          const PAYMENT_METHOD_QUICK_REPLIES = [
+            "계좌이체",
+            "신용카드",
+            "카카오페이",
+            "네이버페이",
+            "토스",
+          ];
+          if (
+            currentSignupStep === "select_payment" &&
+            PAYMENT_METHOD_QUICK_REPLIES.includes(message.trim())
+          ) {
+            const finalConfirmMessage =
+              "결제 방법을 확인했어요. 아래 정보를 확인하시고, 맞으시면 채팅으로 '가입 신청하기'라고 보내주세요.";
+
+            if (!isStopped()) {
+              socket.emit("chunk", finalConfirmMessage);
+            }
+            if (isStopped()) {
+              return;
+            }
+
+            await saveMessage(currentSessionId, "ai", finalConfirmMessage);
+
+            const paymentSignupData: Record<string, unknown> = {
+              ...(currentSignupData ?? {}),
+              paymentMethod: message.trim(),
+            };
+            await saveMessage(
+              currentSessionId,
+              "ai",
+              "",
+              undefined,
+              "signup_summary",
+              resolveBenefitTitlesForDisplay(paymentSignupData),
+              planSnapshot,
+            );
+
+            await updateSignupCollectedData(
+              currentSessionId,
+              paymentSignupData,
+            );
+            signupCollectedData = paymentSignupData;
+
+            socket.emit("signup", {
+              signupStep: "final_confirm",
+              signupData: paymentSignupData,
+            });
+            socket.emit("quickReplies", ["가입 신청하기", "처음부터 다시"]);
+            socket.emit("done");
+            return;
+          }
+
+          // "가입 신청하기"를 정확히 그대로 보내면 AI 호출 없이 즉시 가입을 확정함
+          if (
+            currentSignupStep === "final_confirm" &&
+            message.trim() === "가입 신청하기"
+          ) {
+            socket.emit("signup", {
+              signupStep: "completed",
+              signupData: currentSignupData ?? {},
+            });
+            socket.emit("quickReplies", []);
+
+            if (userId) {
+              await completeSignup();
+            }
+
+            if (!isStopped()) {
+              socket.emit("done");
+            }
+            return;
+          }
+
           const { decision, interactionId } = await getSignupDecision(
             {
               message,
@@ -864,12 +1080,8 @@ export function setupChatSocket(io: Server) {
 
           await saveMessage(currentSessionId, "ai", decision.message);
 
-          // 카드 타입 메시지 DB 저장 (재접속/관리자 열람 시 복원용)
-          const planSnapshot = {
-            code: plan.code,
-            name: plan.name,
-            monthlyFee: plan.discountFee ?? plan.monthlyFee,
-          };
+          // 카드 타입 메시지 DB 저장 (재접속/관리자 열람 시 복원용, planSnapshot은
+          // 위에서 이미 선언됨)
           const mergedSignupData = {
             ...(currentSignupData ?? {}),
             ...(decision.signupData
@@ -1074,6 +1286,20 @@ export function setupChatSocket(io: Server) {
         // 아래의 코드 레벨 필터로 이중으로 막음
         const candidates = await getPlanCandidates();
 
+        // 사용자가 현재 요금제에서 실제로 고른 선택형 혜택(예: 지니뮤직)을 코드가
+        // 아니라 제목으로 알려줘야, "내가 지금 쓰는 혜택이 뭐야?" 같은 질문에 AI가
+        // 요금제의 일반적인 혜택 카테고리가 아니라 사용자가 실제 선택한 옵션으로 답함
+        const currentPlanSelectedBenefits = currentPlan?.selectedOptions
+          ? resolveSelectedBenefitTitles(
+              currentPlan.selectedOptions,
+              (
+                (await getPlanByCode(currentPlan.planCode)) as unknown as {
+                  choiceBenefits?: ChoiceBenefitLike[];
+                } | null
+              )?.choiceBenefits,
+            )
+          : undefined;
+
         const { decision, interactionId } = await getChatDecision(
           {
             message,
@@ -1083,6 +1309,7 @@ export function setupChatSocket(io: Server) {
             plans: candidates,
             promptContent,
             currentPlanCode: currentPlan?.planCode ?? null,
+            currentPlanSelectedBenefits,
           },
           (text) => {
             if (!isStopped()) socket.emit("chunk", text);
@@ -1149,69 +1376,6 @@ export function setupChatSocket(io: Server) {
         // 프론트에 전달되어, 이전 턴 칩이 화면에 남아있지 않음
         if (decision.action === "ask") {
           socket.emit("quickReplies", decision.quickReplies ?? []);
-        }
-
-        // 일반 상담 중 특정 요금제 가입 의사가 명확해진 경우. preselectedPlan은
-        // 요금제 상세 페이지 버튼을 눌러야만 채워지는 프론트 상태라 여기서 직접
-        // 못 채우므로, signup_kickoff_requested로 신호만 보내 그 버튼을 누른 것과
-        // 동일하게 처리함. 비회원은 애초에 가입 플로우에 못 들어가므로 userId가
-        // 있을 때만 보냄
-        if (decision.action === "signup" && decision.signupPlanCode && userId) {
-          const kickoffPlan = candidates.find(
-            (p) => p.code === decision.signupPlanCode,
-          );
-          if (kickoffPlan) {
-            // 이미 채팅으로 가입 의사를 밝힌 뒤라 "선택하셨군요! 도와드릴까요?"
-            // 재확인은 생략하고, 사기 예방 안내(가입 첫 턴)를 같은 턴에 이어붙임
-            const fraudWarningMessage =
-              "가입을 진행하기 전에 먼저 개통 사기 예방을 위한 안내를 드릴게요.\n\n" +
-              "휴대폰·유심 개통 목적을 반드시 직접 확인하시고, 타인에게 양도하거나 " +
-              "금융 사기에 이용되는 경우 법적 책임이 발생할 수 있습니다.\n\n" +
-              "안내 내용을 확인하셨다면 아래 '확인했어요'를 눌러주시거나, 채팅으로 확인했다고 말씀해 주세요.";
-
-            if (!isStopped()) {
-              socket.emit("chunk", "\n\n" + fraudWarningMessage);
-            }
-            if (isStopped()) {
-              return;
-            }
-
-            // decision.message는 위에서 이미 저장했으므로, 여기서는 이어붙인
-            // 텍스트만 별도 행으로 저장함(실시간 화면엔 한 말풍선, 복원 시엔 두
-            // 말풍선 — 텍스트 중복 저장보다 나은 절충안)
-            await saveMessage(currentSessionId, "ai", fraudWarningMessage);
-            await saveMessage(
-              currentSessionId,
-              "ai",
-              "",
-              undefined,
-              "fraud_warning",
-            );
-
-            // 일반 상담 맥락을 이어받지 않도록 AI 메모리를 끊고 새로 시작함
-            previousInteractionId = undefined;
-            await updateLastInteractionId(currentSessionId, null);
-
-            await updateSignupCollectedData(currentSessionId, {});
-            signupCollectedData = {};
-            await recordConversionEvent(currentSessionId, "signup_started");
-
-            socket.emit("signup", {
-              signupStep: "fraud_warning",
-              signupData: {},
-            });
-            socket.emit("quickReplies", ["확인했어요"]);
-
-            // "signup"보다 반드시 나중에 보내야 함 — currentSignupStep이 먼저
-            // 채워져 있어야 preselectedPlan이 채워질 때 인삿말 effect가 "새로
-            // 진입"으로 오판해 중복 실행되지 않음 (소켓 이벤트는 보낸 순서대로 도착)
-            socket.emit("signup_kickoff_requested", {
-              code: kickoffPlan.code,
-              name: kickoffPlan.name,
-              monthlyFee: kickoffPlan.discount_fee ?? kickoffPlan.monthly_fee,
-              recommendedByAI: true,
-            });
-          }
         }
 
         socket.emit("done");

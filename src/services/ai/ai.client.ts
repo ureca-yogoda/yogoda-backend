@@ -186,6 +186,8 @@ interface GetChatDecisionParams {
   promptContent: string;
   // 로그인 사용자의 현재 가입 요금제 code. AI 프롬프트에 명시해 환각으로 인한 중복 추천을 방지함
   currentPlanCode?: string | null;
+  // 현재 요금제에서 사용자가 실제로 선택한 선택형 혜택 (카테고리 제목 → 선택한 옵션 제목 목록)
+  currentPlanSelectedBenefits?: Record<string, string[]>;
 }
 
 interface ChatDecisionResult {
@@ -509,6 +511,7 @@ export async function getChatDecision(
     plans,
     promptContent,
     currentPlanCode,
+    currentPlanSelectedBenefits,
   }: GetChatDecisionParams,
   onChunk: (text: string) => void,
   onMessageComplete: () => void,
@@ -524,6 +527,7 @@ export async function getChatDecision(
     plans,
     isFirstTurn,
     currentPlanCode,
+    currentPlanSelectedBenefits,
   );
 
   // 대화가 새로 시작되는지 이어지는지, collectedInfo가 잘 이어지는지 확인용
@@ -562,6 +566,7 @@ export async function getChatDecision(
           plans,
           promptContent,
           currentPlanCode,
+          currentPlanSelectedBenefits,
         },
         onChunk,
         onMessageComplete,
@@ -1000,7 +1005,10 @@ export async function getSignupDecision(
       method: "post",
       url: "https://generativelanguage.googleapis.com/v1beta/interactions",
       headers: { "x-goog-api-key": env.AI_API_KEY },
-      signal,
+      // streamInteractionMessage를 거치지 않는 별도 axios 호출이라 거기서 건 타임아웃이
+      // 자동 적용 안 됨 — 여기서 직접 감싸줌 (없으면 2차 호출이 멈췄을 때 카드
+      // 스켈레톤이 무한정 멈춰있는 문제가 있었음)
+      signal: withTimeout(signal, AI_RESPONSE_TIMEOUT_MS),
       data: {
         model: env.AI_MODEL,
         input: "방금 답변을 정리해줘.",
