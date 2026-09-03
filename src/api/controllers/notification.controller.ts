@@ -3,7 +3,6 @@ import type { NextFunction, Request, Response } from "express";
 import {
   getNotifications,
   getUnreadNotificationCount,
-  markAllNotificationsAsRead,
   markNotificationAsRead,
   markAllNotificationsAsRead,
   removeNotification,
@@ -25,20 +24,6 @@ export async function listNotifications(
     ]);
 
     res.status(200).json({ notifications, unreadCount });
-  } catch (error) {
-    next(error);
-  }
-}
-
-/** 안 읽은 알림을 전부 읽음 처리합니다. */
-export async function readAllNotifications(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) {
-  try {
-    await markAllNotificationsAsRead(req.user!.userId);
-    res.status(200).json({ message: "모든 알림을 읽음 처리했어요." });
   } catch (error) {
     next(error);
   }

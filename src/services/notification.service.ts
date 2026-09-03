@@ -241,14 +241,6 @@ export async function markNotificationAsRead(
   );
 }
 
-/** 로그인한 사용자의 안 읽은 알림을 목록 제한과 관계없이 모두 읽음 처리합니다. */
-export async function markAllNotificationsAsRead(userId: string) {
-  await NotificationModel.updateMany(
-    { user_id: userId, read_at: null },
-    { $set: { read_at: new Date() } },
-  );
-}
-
 /**
  * 유저의 안 읽은 알림을 전부 읽음 처리합니다. getNotifications는 최신 10개만
  * 반환하지만, 여기는 페이지네이션 없이 DB에서 바로 조건에 맞는 모든 문서를
