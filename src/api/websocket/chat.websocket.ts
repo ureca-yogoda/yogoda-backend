@@ -1067,7 +1067,12 @@ export function setupChatSocket(io: Server) {
 
         // ── 기존 추천 플로우 ────────────────────────────────────────────────────
         const currentPlan = userId ? await getCurrentPlan(userId) : null;
-        const candidates = await getPlanCandidates(currentPlan?.planCode);
+        // 현재 이용 중인 요금제도 후보 목록([요금제 목록])에 그대로 포함시킴 —
+        // 예전엔 여기서 제외했더니, 사용자가 "내 요금제 정보 알려줘"처럼 현재
+        // 요금제 자체를 물어봐도 AI가 실제 데이터가 없어 사양을 지어내는 문제가
+        // 있었음. 추천 후보에서 빠져야 하는 건 AI 프롬프트 지시(currentPlanBlock)와
+        // 아래의 코드 레벨 필터로 이중으로 막음
+        const candidates = await getPlanCandidates();
 
         const { decision, interactionId } = await getChatDecision(
           {
@@ -1093,6 +1098,14 @@ export function setupChatSocket(io: Server) {
         // 응답을 받아온 시점에 이미 정지됐다면 DB 저장·세션 상태 갱신 없이 버림
         if (isStopped()) {
           return;
+        }
+
+        // 현재 이용 중인 요금제가 이제 candidates에 포함되어 있어서, AI가 프롬프트
+        // 지시를 어기고 recommendations에 넣어버려도 여기서 코드로 확실히 걸러냄
+        if (currentPlan?.planCode && decision.recommendations?.length) {
+          decision.recommendations = decision.recommendations.filter(
+            (r) => r.code !== currentPlan.planCode,
+          );
         }
 
         let cards: ReturnType<typeof buildPlanCards> = [];
