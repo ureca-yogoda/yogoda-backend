@@ -3,6 +3,7 @@ export interface SurveyAnswers {
   monthlyData?: string;
   contentPreference?: string;
   benefitPreference?: string;
+  budget?: string;
   planPriority?: string;
   recommendationPriority?: string;
 }
