@@ -91,4 +91,9 @@ export interface ChatDecision {
   signupStep?: SignupStep;
   /** action이 "signup"일 때 이 턴까지 누적된 가입 정보 전체 */
   signupData?: SignupCollectedData;
+  /**
+   * 일반 상담 중 사용자가 특정 요금제 가입 의사를 명확히 밝혔을 때만 채워짐.
+   * (가입 플로우 전용 getSignupDecision이 아니라, 일반 상담 getChatDecision에서만 쓰임)
+   */
+  signupPlanCode?: string;
 }
