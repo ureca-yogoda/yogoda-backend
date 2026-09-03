@@ -106,15 +106,21 @@ export const DEFAULT_PROMPT_CONTENT = `
 [가입 의사 처리 - 매우 중요]
 - 사용자가 특정 요금제 하나를 콕 집어 가입 의사를 명확히 밝히면(예: "그걸로 가입할래",
   "이 요금제 가입하고 싶어", "OOO 요금제로 할게요") — 방금 추천해준 요금제든, 대화 중
-  이름이 언급됐던 다른 요금제든 상관없이 — action을 "signup"으로 바꾸세요.
-  - signupPlanCode에 아래 [요금제 목록]에 실제로 있는 code를 정확히 넣으세요.
-  - message는 짧게 동의하며 바로 가입을 시작한다는 안내만 담으세요 (예: "네, **OOO**
-    요금제로 가입 진행을 도와드릴게요!"). 요금제 사양을 다시 나열하거나 recommendations을
-    채우지 마세요 — 화면이 곧바로 가입 절차로 전환되므로 여기서 더 설명할 필요가 없습니다.
+  이름이 언급됐던 다른 요금제든 상관없이 — action을 "recommend"로 바꾸고, 그 요금제
+  하나만 recommendations 배열에 담으세요. (action을 "signup"으로 바꾸지 마세요 —
+  "signup"은 가입 플로우 전용이고, 여기서는 쓰지 않습니다.)
+  - recommendations의 code는 아래 [요금제 목록]에 실제로 있는 code를 정확히 넣으세요.
+    선택형 혜택이 있는 요금제일 수 있어서, 상세 페이지에서 혜택을 고른 뒤 가입을
+    시작해야 합니다 — 여기서 가입을 곧바로 시작시키지 마세요.
+  - message는 짧게 동의하는 안내만 담으세요 (예: "네, **OOO** 요금제 정보를
+    보여드릴게요. 아래에서 확인 후 바로 가입을 진행하실 수 있어요."). 요금제 사양을
+    다시 나열하지 마세요 — 카드에 이미 표시됩니다.
+  - matchRate·reason은 일반 추천과 같은 형식으로 채우되, reason은 "요청하신 요금제예요"
+    같은 취지로 짧게 적어도 됩니다.
   - quickReplies는 빈 배열로 두세요.
 - 어떤 요금제인지 대화만으로 특정할 수 없으면(예: 이름 언급 없이 그냥 "가입할래"라고만
-  함, 또는 목록에 없는 요금제를 말함) action을 "signup"으로 쓰지 말고, 어떤 요금제인지
-  먼저 되물으세요(action: "ask").
+  함, 또는 목록에 없는 요금제를 말함) 위처럼 처리하지 말고, 어떤 요금제인지 먼저
+  되물으세요(action: "ask").
 
 [collectedInfo 응답 규칙 - 매우 중요]
 - collectedInfo에는 [이미 파악된 정보]에 있던 값을 모두 그대로 포함하고, 이번 메시지에서 새로 알게 된 값을 추가·수정해서 반환하세요.
@@ -218,6 +224,7 @@ export function buildSystemPrompt(
   plans: PlanCandidate[],
   isFirstTurn: boolean,
   currentPlanCode?: string | null,
+  currentPlanSelectedBenefits?: Record<string, string[]>,
 ): string {
   /*
    * 화면 첫 번째 말풍선에 이미 인사 문구가 고정 표시되므로,
@@ -244,8 +251,8 @@ export function buildSystemPrompt(
 ${AI_META_DELIMITER}
 그 다음 줄부터는, 코드블록(\`\`\`) 없이 아래 스키마를 따르는 JSON 객체 하나만 쓰고
 그 뒤에는 정말 아무것도 쓰지 마세요. 이 부분은 사용자에게 절대 보이지 않습니다:
-- action: "ask"(질문을 더 해야 함), "recommend"(추천할 준비가 됨), 또는 "signup"(사용자가
-  특정 요금제 가입 의사를 명확히 밝힘 — 위 [가입 의사 처리] 참고)
+- action: "ask"(질문을 더 해야 함) 또는 "recommend"(추천할 준비가 됨 — 특정 요금제 가입
+  의사를 명확히 밝힌 경우도 포함, 위 [가입 의사 처리] 참고)
 - collectedInfo: 위 [collectedInfo 응답 규칙]을 따르는, 지금까지 파악된 정보 전체
 - recommendations: action이 "recommend"일 때만, 선택한 요금제의 code / matchRate(0~100 정수) / reason(한 문장 추천 이유).
   reason 문장 안에서, 사용자가 채팅으로 직접 말한 조건(데이터 사용량, 선호 혜택, 예산 등)과
@@ -253,7 +260,6 @@ ${AI_META_DELIMITER}
   아무 데도 굵게 표시하지 않는 것은 금지입니다 — 반드시 일치하는 핵심 구절만 짧게 감싸세요.
   [JSON 문법 주의] reason 값이 **로 시작하더라도 반드시 여는 큰따옴표(")를 먼저 쓰세요.
   (예: "reason": **비쌈**... (X, JSON 깨짐) → "reason": "**비쌈**... (O))
-- signupPlanCode: action이 "signup"일 때만, 위 [가입 의사 처리]를 따르는 요금제 code
 - quickReplies: 위 [빠른 답변(quickReplies) 규칙]을 따르는 문자열 배열`;
 
   const knownInfoBlock = formatKnownInfo(collectedInfo, surveyContext);
@@ -262,10 +268,21 @@ ${AI_META_DELIMITER}
 
   /*
    * 현재 가입 요금제 블록: 후보 목록에서 이미 걸렀더라도 AI가 환각으로 추천하는 경우를
-   * 방지하기 위해 프롬프트에도 명시적으로 제외 지시를 넣음
+   * 방지하기 위해 프롬프트에도 명시적으로 제외 지시를 넣음. 선택형 혜택 중 사용자가
+   * 실제로 고른 옵션도 함께 알려줘서, "내가 지금 쓰는 혜택이 뭐야?" 같은 질문에 요금제의
+   * 일반적인 혜택 카테고리가 아니라 실제 선택한 옵션으로 답할 수 있게 함
    */
+  const selectedBenefitLines = currentPlanSelectedBenefits
+    ? Object.entries(currentPlanSelectedBenefits)
+        .filter(([, options]) => options.length > 0)
+        .map(([category, options]) => `  - ${category}: ${options.join(", ")}`)
+    : [];
   const currentPlanBlock = currentPlanCode
-    ? `[현재 가입 요금제 - 추천 금지]\n- planCode: ${currentPlanCode}\n(이 요금제는 이미 이용 중이므로 recommendations 배열에 절대 포함하지 마세요)`
+    ? `[현재 가입 요금제 - 추천 금지]\n- planCode: ${currentPlanCode}${
+        selectedBenefitLines.length > 0
+          ? `\n- 실제 선택한 혜택:\n${selectedBenefitLines.join("\n")}`
+          : ""
+      }\n(이 요금제는 이미 이용 중이므로 recommendations 배열에 절대 포함하지 마세요)`
     : `[현재 가입 요금제]\n없음 (미가입 또는 비회원)`;
 
   return `
@@ -465,14 +482,19 @@ export const SIGNUP_PROMPT_SECTION = `
                      번호가 괄호 안에 담긴 메시지가 오며, 이때 signupData.identityVerified를
                      true로, name·birth·phoneNumber도 함께 그 값 그대로 기록한 뒤 다음
                      단계로 넘어가세요. (이 정보는 카드에서 이미 검증됐으므로 재검증 불필요)
-4. select_benefits : 요금제에 선택형 혜택이 있는 경우에만 진행합니다.
-                     혜택이 없으면 이 단계를 건너뛰세요.
+4. select_benefits : 요금제에 **필수(required)** 선택형 혜택이 있는 경우에만 진행합니다.
+                     필수 혜택이 없으면 이 단계를 건너뛰세요.
                      [현재까지 수집된 가입 정보]의 selectedBenefits를 먼저 확인하세요 — 사용자가
                      요금제 상세 페이지에서 미리 혜택을 골라두고 가입을 시작한 경우, 이미 모든
                      필수([선택형 혜택 목록]의 "필수" 표시) stepCode가 요구 개수만큼 채워져 있을
                      수 있습니다. 이미 다 채워져 있다면 다시 묻지 말고, 이미 선택하신 혜택으로
-                     진행한다고 짧게 안내한 뒤 바로 select_payment로 넘어가세요. 일부만 채워져
-                     있거나 아예 없다면 부족한 부분만 채팅으로 물어보세요.
+                     진행한다고 짧게 안내한 뒤 바로 select_payment로 넘어가세요. 일부 필수
+                     항목만 채워져 있거나 아예 없다면 그 부족한 **필수** 부분만 채팅으로
+                     물어보세요.
+                     [매우 중요] 필수(required)가 아닌 선택 사항(optional) 혜택은 사용자가
+                     먼저 묻지 않는 한 채팅에서 먼저 나서서 권하거나 "더 고르시겠어요?"처럼
+                     추가로 제안하지 마세요. 필수 항목이 모두 채워지면, 선택(optional) 혜택을
+                     더 골랐는지와 무관하게 그 즉시 select_payment로 넘어가세요.
                      사용자가 혜택을 선택하면 signupData.selectedBenefits에
                      { "[stepCode]": ["optionCode"] } 형식으로 저장하세요. (혜택 목록의 stepCode와 optionCode를 그대로 사용할 것)
 5. select_payment  : 요금 납부 방법을 선택받습니다.
