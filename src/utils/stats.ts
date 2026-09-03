@@ -5,18 +5,29 @@ export interface DateRange {
   end: Date;
 }
 
-// today는 오늘 00:00(UTC)부터 지금까지, 7d/30d는 지금부터 과거로 롤링 윈도우
+// DB엔 항상 UTC로 저장되지만, 관리자가 보는 기간은 한국 시간(KST, UTC+9) 기준
+// 날짜 경계여야 함. UTC 자정으로 계산하면 KST로 오전 9시가 하루의 시작이 되어버림
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+// setUTCHours는 UTC 자정만 구할 수 있어서, 9시간 밀었다 자정으로 자르고
+// 다시 되돌리는 방식으로 KST 자정을 구함
+function getKstMidnight(date: Date): Date {
+  const kstShifted = new Date(date.getTime() + KST_OFFSET_MS);
+  kstShifted.setUTCHours(0, 0, 0, 0);
+  return new Date(kstShifted.getTime() - KST_OFFSET_MS);
+}
+
+// 세 프리셋 모두 "오늘 포함 최근 N개 KST 날짜 00:00부터 지금까지"로 통일
+// (today=1일치, 7d=7일치, 30d=30일치)
 export function getPeriodRange(period: StatsPeriod): DateRange {
   const end = new Date();
+  const days = period === "today" ? 1 : period === "7d" ? 7 : 30;
+  const todayMidnight = getKstMidnight(end);
+  const start = new Date(
+    todayMidnight.getTime() - (days - 1) * 24 * 60 * 60 * 1000,
+  );
 
-  if (period === "today") {
-    const start = new Date(end);
-    start.setUTCHours(0, 0, 0, 0);
-    return { start, end };
-  }
-
-  const days = period === "7d" ? 7 : 30;
-  return { start: new Date(end.getTime() - days * 24 * 60 * 60 * 1000), end };
+  return { start, end };
 }
 
 // "전일/전주 대비"를 기간 길이와 무관하게 일반화: 현재 조회 기간 바로 직전의 동일한 길이 구간

@@ -64,6 +64,17 @@ async function createNotification(input: {
   }
 }
 
+export function notifyUsagePatternChanged(userId: string, usageMonth: string) {
+  return createNotification({
+    userId,
+    type: "usage_pattern_changed",
+    title: "새 추천이 도착했어요!",
+    body: "사용 패턴 변화가 감지되어 지금 이용 방식에 맞는 요금제를 분석할 수 있어요.",
+    link: "/my/usage",
+    dedupeKey: `usage_pattern_changed:${usageMonth}`,
+  });
+}
+
 /**
  * 만료 D-3인 보유 쿠폰을 스캔해 알림을 생성합니다.
  * 매일 한 번 cron으로 호출되며, 같은 쿠폰에 대해 두 번 이상 알림을 보내지 않도록
@@ -184,6 +195,20 @@ export async function notifyIncompleteConsultations() {
   return { checked: idleSessions.length };
 }
 
+/**
+ * 세션이 끝나거나 삭제되면, 그 세션에 대해 이미 보낸 "상담 미완료" 리마인드
+ * 알림은 더 이상 유효하지 않으므로 함께 지웁니다.
+ */
+export async function clearConsultationIncompleteNotification(
+  userId: string,
+  sessionId: string,
+) {
+  await NotificationModel.deleteOne({
+    user_id: userId,
+    dedupe_key: `consultation_incomplete:${sessionId}`,
+  });
+}
+
 // 목록 조회 시 가져올 최대 알림 개수
 const NOTIFICATION_LIST_LIMIT = 10;
 
@@ -226,6 +251,20 @@ export async function markNotificationAsRead(
 ) {
   await NotificationModel.updateOne(
     { _id: notificationId, user_id: userId, read_at: null },
+    { $set: { read_at: new Date() } },
+  );
+}
+
+/**
+ * 유저의 안 읽은 알림을 전부 읽음 처리합니다. getNotifications는 최신 10개만
+ * 반환하지만, 여기는 페이지네이션 없이 DB에서 바로 조건에 맞는 모든 문서를
+ * 갱신합니다 — 프론트가 화면에 보이는 항목만 개별로 읽음 처리하면, 10개보다
+ * 많이 쌓인 유저는 뒤에 남은 알림이 계속 안 읽음으로 남아 종 아이콘 배지가
+ * 다시 나타나는 문제가 있었습니다.
+ */
+export async function markAllNotificationsAsRead(userId: string) {
+  await NotificationModel.updateMany(
+    { user_id: userId, read_at: null },
     { $set: { read_at: new Date() } },
   );
 }

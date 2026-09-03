@@ -66,6 +66,7 @@ const router = Router();
  *                     maxDropStage:
  *                       type: string
  *                       nullable: true
+ *                       description: 바로 직전 동일 길이 구간 대비 이번 기간 dropRate가 가장 나빠진 단계 (절대값 최대가 아님)
  *                     stages:
  *                       type: array
  *                       items:
@@ -82,6 +83,13 @@ const router = Router();
  *                           dropRate:
  *                             type: number
  *                             nullable: true
+ *                           baselineDropRate:
+ *                             type: number
+ *                             nullable: true
+ *                             description: 바로 직전 동일 길이 구간(previousRange) 기준의 dropRate
+ *                           baselineCount:
+ *                             type: number
+ *                             description: baselineDropRate 계산에 쓰인 표본 수. 작으면 baselineDropRate를 신뢰하기 어려움
  *                 promptConversion:
  *                   type: array
  *                   items:
@@ -162,6 +170,11 @@ router.get("/dashboard", authMiddleware, adminMiddleware, getDashboardHandler);
  *           type: string
  *         description: 프롬프트 버전 필터
  *       - in: query
+ *         name: chat_log_consent
+ *         schema:
+ *           type: boolean
+ *         description: 채팅 기록 열람 동의 여부 필터. 생략하면 전체 조회 (false는 미응답 포함)
+ *       - in: query
  *         name: page
  *         schema:
  *           type: number
@@ -216,6 +229,9 @@ router.get("/dashboard", authMiddleware, adminMiddleware, getDashboardHandler);
  *                       duration:
  *                         type: number
  *                         description: 세션 지속 시간 (초)
+ *                       chatLogConsent:
+ *                         type: boolean
+ *                         description: 채팅 기록 열람 동의 여부 (false면 상세 조회 시 messages가 빈 배열로 옴)
  *       400:
  *         description: 잘못된 쿼리 파라미터
  *         content:
@@ -291,6 +307,9 @@ router.get("/sessions", authMiddleware, adminMiddleware, getSessionListHandler);
  *                 duration:
  *                   type: number
  *                   description: 세션 지속 시간 (초)
+ *                 chatLogConsent:
+ *                   type: boolean
+ *                   description: 채팅 기록 열람 동의 여부. false면 messages는 항상 빈 배열
  *                 messages:
  *                   type: array
  *                   items:

@@ -13,6 +13,151 @@ import type {
   SurveyAnswers,
   SurveyContext,
 } from "../../types/chat.js";
+import type {
+  PersonaAnswers,
+  PersonaAnalysisResult,
+} from "../../types/persona.js";
+
+export type PersonaAnalysisLocale = "ko" | "en";
+
+// Gemini가 응답을 시작하지 못한 채 계속 붙잡고 있는 경우를 대비한 서버 쪽 안전장치.
+// 프론트는 30초 뒤 자체적으로 타임아웃 에러를 보여주지만, 백엔드 요청 자체엔 이게
+// 없으면 응답이 올 때까지(또는 커넥션이 죽을 때까지) 계속 붙들려 있게 됨
+const AI_RESPONSE_TIMEOUT_MS = 60_000;
+
+function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal {
+  const timeoutSignal = AbortSignal.timeout(ms);
+  return signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+}
+
+const PERSONA_ANALYSIS_TYPES = [
+  "data_heavy",
+  "content_balanced",
+  "benefit_focused",
+  "saving_focused",
+  "balanced",
+] as const;
+
+const PERSONA_ANALYSIS_SCHEMA = {
+  type: "object",
+  properties: {
+    type: { type: "string", enum: PERSONA_ANALYSIS_TYPES },
+    title: { type: "string" },
+    description: { type: "string" },
+    summary: { type: "string" },
+    scores: {
+      type: "object",
+      properties: {
+        data: { type: "integer", minimum: 0, maximum: 100 },
+        content: { type: "integer", minimum: 0, maximum: 100 },
+        benefit: { type: "integer", minimum: 0, maximum: 100 },
+        price: { type: "integer", minimum: 0, maximum: 100 },
+      },
+      required: ["data", "content", "benefit", "price"],
+    },
+    direction: { type: "string" },
+    directionDescription: { type: "string" },
+  },
+  required: [
+    "type",
+    "title",
+    "description",
+    "summary",
+    "scores",
+    "direction",
+    "directionDescription",
+  ],
+};
+
+function isPersonaAnalysisResult(
+  value: unknown,
+): value is PersonaAnalysisResult {
+  if (!value || typeof value !== "object") return false;
+  const result = value as Record<string, unknown>;
+  const scores = result.scores as Record<string, unknown> | undefined;
+  const strings = [
+    "title",
+    "description",
+    "summary",
+    "direction",
+    "directionDescription",
+  ];
+
+  return (
+    typeof result.type === "string" &&
+    (PERSONA_ANALYSIS_TYPES as readonly string[]).includes(result.type) &&
+    strings.every(
+      (key) => typeof result[key] === "string" && result[key].length > 0,
+    ) &&
+    !!scores &&
+    ["data", "content", "benefit", "price"].every((key) => {
+      const score = scores[key];
+      return (
+        typeof score === "number" &&
+        Number.isInteger(score) &&
+        score >= 0 &&
+        score <= 100
+      );
+    })
+  );
+}
+
+export async function analyzePersonaWithAI(input: {
+  answers: PersonaAnswers;
+  locale: PersonaAnalysisLocale;
+}): Promise<PersonaAnalysisResult> {
+  const language = input.locale === "en" ? "English" : "Korean";
+  const systemInstruction = `You are a mobile-plan customer persona analyst. Analyze all six survey answers together and return a practical, respectful result in ${language}.
+
+Persona type rules:
+- data_heavy: prioritizes high or unlimited data
+- content_balanced: prioritizes video, OTT, games, or content value
+- benefit_focused: prioritizes memberships, coupons, and partner benefits
+- saving_focused: prioritizes reducing monthly cost
+- balanced: no single priority clearly dominates
+
+Score data, content, benefit, and price importance from 0 to 100. Scores express relative customer priorities, not confidence. Use concise mobile UI copy. Do not claim access to usage history or personal data beyond the supplied answers. Use polite language.`;
+
+  let response;
+  try {
+    response = await axios({
+      method: "post",
+      url: "https://generativelanguage.googleapis.com/v1beta/interactions",
+      headers: { "x-goog-api-key": env.AI_API_KEY },
+      data: {
+        model: env.AI_MODEL,
+        input: JSON.stringify(input.answers),
+        system_instruction: systemInstruction,
+        response_format: {
+          type: "text",
+          mime_type: "application/json",
+          schema: PERSONA_ANALYSIS_SCHEMA,
+        },
+      },
+    });
+  } catch (error) {
+    logAiError("AI 페르소나 분석 요청 실패", error);
+    throw new Error("AI_REQUEST_FAILED");
+  }
+
+  const steps: InteractionStep[] = response.data?.steps ?? [];
+  const rawText = steps.find((step) => step.type === "model_output")
+    ?.content?.[0]?.text;
+  if (typeof rawText !== "string") throw new Error("AI_RESPONSE_INVALID");
+
+  try {
+    const parsed: unknown = JSON.parse(rawText);
+    if (!isPersonaAnalysisResult(parsed)) {
+      throw new Error("AI_RESPONSE_INVALID");
+    }
+    return parsed;
+  } catch (error) {
+    if (error instanceof Error && error.message === "AI_RESPONSE_INVALID") {
+      throw error;
+    }
+    throw new Error("AI_RESPONSE_INVALID");
+  }
+}
 
 /*
  * AxiosError를 console.error에 그대로 넘기면 내부 request/response 객체(소켓, 스트림 등
@@ -87,7 +232,7 @@ async function streamInteractionMessage(
     url: "https://generativelanguage.googleapis.com/v1beta/interactions?alt=sse",
     headers: { "x-goog-api-key": env.AI_API_KEY },
     responseType: "stream",
-    signal,
+    signal: withTimeout(signal, AI_RESPONSE_TIMEOUT_MS),
     data: {
       model,
       input,
@@ -218,6 +363,11 @@ const SIGNUP_LEAK_MARKERS = [
   '"action"',
   "[이미 파악된 정보]",
   "[가입 진행 정보]",
+  // 필드 이름 마커는 JSON이 이미 상당히 진행된 뒤에야 나타나서, 그 앞의 여는 중괄호
+  // "{"까지는 "마커 이전 텍스트"로 취급돼 화면에 그대로 노출되는 문제가 있었음. 이
+  // 답변은 자연어 안내문이라 "{"가 정상적으로 등장할 일이 없으므로, 중괄호 자체를
+  // 가장 이른 누출 신호로 추가함
+  "{",
 ];
 const SIGNUP_LEAK_MAX_MARKER_LEN = Math.max(
   ...SIGNUP_LEAK_MARKERS.map((m) => m.length),
@@ -556,7 +706,12 @@ ${serializePlan(selectedPlan)}
 - winner: 해당 항목에서 더 유리한 쪽("current"|"selected"|"tie"|"none"). "none"은 비교 자체가 불가능한 경우에만.
 - current/selected는 사람이 읽기 좋은 값 그대로.
 - oneLineSummary: 전체를 15자 이내로 요약.
-- summaryReason: 최종 추천 이유를 2~3문장으로 설명. 반말 금지, 존댓말로.`;
+- summaryReason: 최종 추천 이유를 2~3문장으로 설명. 반말 금지, 존댓말로.
+  문장 안에서 판단 근거가 되는 핵심 구절(금액 차이, 혜택명, 요금제명 등)에만
+  **이렇게** 마크다운 굵게 표시를 하세요. 문장 전체를 굵게 하거나 아무 데도
+  굵게 표시하지 않는 것은 금지입니다 — 핵심 구절 2~3곳만 짧게 감싸세요.
+  [JSON 문법 주의] summaryReason 값이 **로 시작하더라도 반드시 여는 큰따옴표(")를
+  먼저 쓰세요. (예: "summaryReason": **비쌈**... (X, JSON 깨짐) → "summaryReason": "**비쌈**... (O))`;
 
   let response;
   try {
@@ -602,8 +757,17 @@ ${serializePlan(selectedPlan)}
   try {
     return JSON.parse(rawText) as PlanComparisonResult;
   } catch {
-    console.error("AI 비교 응답 JSON 파싱 실패:", rawText);
-    throw new Error("AI_RESPONSE_INVALID");
+    // summaryReason이 **로 시작하는데 여는 따옴표를 빼먹는 흔한 실수 한 가지만
+    // 보정해서 한 번 더 시도함 (recommendations.reason과 동일한 보정 로직)
+    try {
+      const repaired = repairUnquotedBoldValue(rawText);
+      const result = JSON.parse(repaired) as PlanComparisonResult;
+      console.warn("AI 비교 응답 JSON 보정 후 파싱 성공 (여는 따옴표 누락)");
+      return result;
+    } catch {
+      console.error("AI 비교 응답 JSON 파싱 실패:", rawText);
+      throw new Error("AI_RESPONSE_INVALID");
+    }
   }
 }
 

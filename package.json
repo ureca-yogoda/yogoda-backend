@@ -18,6 +18,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "swagger:audit": "tsx scripts/audit-swagger-coverage.ts",
     "prepare": "husky"
   },
   "dependencies": {

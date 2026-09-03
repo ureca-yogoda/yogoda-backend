@@ -13,13 +13,21 @@ import {
   type ChatSessionFunnelStage,
 } from "../models/chat-session.model.js";
 import { getActivePromptVersion } from "./prompt.service.js";
+import { clearConsultationIncompleteNotification } from "./notification.service.js";
 import type { SurveyAnswers } from "../types/chat.js";
 
 /**
  * 회원의 가장 최근 AI 채팅 세션을 조회합니다. (채팅 내역 불러오기용)
+ * 종료된(ended_at이 채워진) 세션은 제외함 — 그렇지 않으면 "채팅 나가기" 직후
+ * 새 세션이 아직 생성되기 전에 새로고침했을 때, 방금 끝낸 옛 대화가 그대로
+ * 복원되는 문제가 있었음(진행 중인 대화가 없으면 null을 반환해 새 웰컴 화면으로 시작함)
  */
 export async function findLatestAIChatSession(userId: string) {
-  return ChatSessionModel.findOne({ user_id: userId, type: "AIChat" }).sort({
+  return ChatSessionModel.findOne({
+    user_id: userId,
+    type: "AIChat",
+    ended_at: null,
+  }).sort({
     updated_at: -1,
   });
 }
@@ -111,10 +119,15 @@ export async function resolveChatSession(
  * 본인 소유의 진행 중인 세션이 아니면 아무 것도 하지 않습니다.
  */
 export async function endChatSession(userId: string, sessionId: string) {
-  await ChatSessionModel.updateOne(
+  const result = await ChatSessionModel.updateOne(
     { _id: sessionId, user_id: userId, type: "AIChat", ended_at: null },
     { $set: { ended_at: new Date() } },
   );
+
+  if (result.modifiedCount > 0) {
+    // 세션이 끝났으니 "상담 미완료" 리마인드 알림이 남아있었다면 함께 지움
+    await clearConsultationIncompleteNotification(userId, sessionId);
+  }
 }
 
 /**
@@ -222,21 +235,28 @@ export async function recordConversionEvent(
 /**
  * 소켓 연결이 끊길 때, 아직 판정되지 않은(status: null) 세션의 status를
  * last_stage 기준으로 확정합니다. 이미 확정된 세션은 건드리지 않습니다.
- * 메시지를 한 건도 주고받지 않은 세션(채팅창만 열었다 닫은 경우)은 실제
- * 상담으로 볼 수 없으므로 세션 자체를 삭제합니다. (ui_events는 세션 status와
- * 무관하게 독립적으로 집계되므로 영향 없음)
+ * 사용자가 한 번도 답장하지 않은 세션(메시지가 아예 없거나, 웰컴/가입 인삿말 같은
+ * AI 메시지만 있는 경우)은 실제 상담으로 볼 수 없으므로 세션과 그 메시지를
+ * 통째로 삭제합니다. (ui_events는 세션 status와 무관하게 독립적으로 집계되므로 영향 없음)
  */
 export async function finalizeSessionStatus(sessionId: string) {
-  const session =
-    await ChatSessionModel.findById(sessionId).select("status last_stage");
+  const session = await ChatSessionModel.findById(sessionId).select(
+    "status last_stage user_id",
+  );
   if (!session || session.status !== null) return;
 
-  const hasMessages = await ChatMessageModel.exists({
+  const hasUserMessage = await ChatMessageModel.exists({
     session_id: sessionId,
+    role: "user",
   });
 
-  if (!hasMessages) {
+  if (!hasUserMessage) {
+    await ChatMessageModel.deleteMany({ session_id: sessionId });
     await ChatSessionModel.deleteOne({ _id: sessionId });
+    if (session.user_id) {
+      // 세션 자체가 사라졌으니 "상담 미완료" 리마인드 알림도 함께 지움
+      await clearConsultationIncompleteNotification(session.user_id, sessionId);
+    }
     return;
   }
 
@@ -257,6 +277,21 @@ export async function claimGuestSession(userId: string, sessionId: string) {
     { _id: sessionId, type: "AIChat", user_id: null, ended_at: null },
     { $set: { user_id: userId } },
     { new: true },
+  );
+}
+
+/**
+ * 채팅 기록을 관리자가 열람하는 것에 대한 사용자 동의를 기록합니다.
+ * 동의하지 않아도 채팅 자체는 계속 이용할 수 있으며, 이 값은 관리자 채팅 로그
+ * 상세 조회 시에만 영향을 줍니다.
+ */
+export async function recordChatLogConsent(
+  sessionId: string,
+  consented: boolean,
+) {
+  await ChatSessionModel.updateOne(
+    { _id: sessionId },
+    { $set: { chat_log_consent: consented, consent_at: new Date() } },
   );
 }
 
