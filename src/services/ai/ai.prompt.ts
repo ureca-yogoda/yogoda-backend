@@ -186,7 +186,7 @@ ${AI_META_DELIMITER}
   (예: "reason": **비쌈**... (X, JSON 깨짐) → "reason": "**비쌈**... (O))
 - quickReplies: 위 [빠른 답변(quickReplies) 규칙]을 따르는 문자열 배열`;
 
-  const knownInfoBlock = formatKnownInfo(surveyContext?.answers, collectedInfo);
+  const knownInfoBlock = formatKnownInfo(collectedInfo);
   const analysisBlock = formatPersonaAnalysis(surveyContext);
   const planBlock = formatPlanCatalog(plans);
 
@@ -217,13 +217,12 @@ ${planBlock}
 `.trim();
 }
 
-// 사전 설문 답변과, 대화로 파악한 정보(collectedInfo)를 하나로 합쳐서 보여줌
-// (collectedInfo가 더 최신 정보이므로 겹치는 항목은 collectedInfo 값이 우선함)
-function formatKnownInfo(
-  surveyAnswers: SurveyAnswers | undefined,
-  collectedInfo: SurveyAnswers | undefined,
-): string {
-  const merged: SurveyAnswers = { ...surveyAnswers, ...collectedInfo };
+// 이 대화에서 채팅으로 직접 파악한 정보만 보여줌. 온보딩 성향 퀴즈(surveyContext.answers)는
+// 이 채팅 이전에 답한 오래된 값일 수 있어 여기 포함하지 않음 — 데이터 사용량·혜택·예산·
+// 우선순위는 퀴즈 결과가 있어도 이 대화에서 항상 새로 물어봐야 함(퀴즈 결과는
+// formatPersonaAnalysis의 성향 분석 참고용으로만 별도 전달됨)
+function formatKnownInfo(collectedInfo: SurveyAnswers | undefined): string {
+  const merged: SurveyAnswers = { ...collectedInfo };
 
   const lines = (Object.keys(FIELD_LABELS) as Array<keyof SurveyAnswers>)
     .filter((key) => merged[key])
@@ -241,7 +240,10 @@ function formatPersonaAnalysis(surveyContext?: SurveyContext): string {
   if (!r) return "";
 
   return [
-    "[AI 성향 분석 결과]",
+    "[AI 성향 분석 결과 - 참고용, 대화 내용을 대체하지 않음]",
+    "이 채팅을 시작하기 전 온보딩 퀴즈로 얻은 결과입니다. 오래됐거나 지금 생각과 다를 수 있으니,",
+    "말투나 추천 방향을 잡는 데 참고만 하세요. [추천 조건]의 데이터 사용량·선호 혜택·예산·우선순위는",
+    "이 분석 결과로 대신하지 말고 이번 대화에서 채팅으로 직접 물어봐서 확인하세요.",
     `- 성향: ${r.title} (${r.summary})`,
     `- 설명: ${r.description}`,
     `- 추천 방향: ${r.direction} — ${r.directionDescription}`,

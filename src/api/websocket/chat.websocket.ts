@@ -368,6 +368,142 @@ export function setupChatSocket(io: Server) {
             return;
           }
 
+          // 약관 동의/본인인증처럼 지정된 UI(체크박스+버튼, 인증 폼)를 통해서만 다음
+          // 단계로 넘어가는 단계들. 애매한 자유 텍스트("음" 등)를 AI가 완료 의사로
+          // 오판해 넘겨버리는 걸 막기 위해 결정론적으로 검증함.
+          // fraud_warning은 여기 포함하지 않음 — 버튼/고정 문구가 아니라 AI가 자유
+          // 텍스트의 긍정/부정 의미를 직접 판단해서 진행 여부를 결정해야 하는 단계라서
+          const GATED_SIGNUP_STEPS: Record<
+            string,
+            { triggerPrefix: string; nudge: string }
+          > = {
+            terms_agreement: {
+              triggerPrefix: "동의합니다",
+              nudge: "위 약관에 모두 동의하신 뒤 **다음** 버튼을 눌러주세요.",
+            },
+            identity_verification: {
+              triggerPrefix: "본인인증 완료",
+              nudge:
+                "카드에 이름·생년월일·휴대폰 번호를 입력하고 본인인증을 완료해 주세요.",
+            },
+          };
+
+          // 위 두 단계는 트리거 문구가 오면 다음 단계가 무엇인지 이미 코드로 확실히
+          // 알 수 있어서(카드 UI를 통해서만 만들어지는, 정해진 형식의 메시지라
+          // AI의 자유로운 판단이 필요 없음), AI 호출 없이 fraud_warning 첫 턴과 같은
+          // 방식으로 즉시 다음 카드를 띄움. 1~2차 AI 호출(수 초~수십 초)을 기다릴
+          // 필요가 없어져서 체감 속도가 크게 개선됨. select_benefits로 넘어가야 하는
+          // 경우(선택할 혜택이 남아있음)는 AI가 혜택 목록을 안내해야 해서 이 지름길
+          // 대상이 아니며, 평소처럼 아래 getSignupDecision을 거침
+          if (
+            currentSignupStep &&
+            GATED_SIGNUP_STEPS[currentSignupStep] &&
+            message
+              .trim()
+              .startsWith(GATED_SIGNUP_STEPS[currentSignupStep].triggerPrefix)
+          ) {
+            const base = { ...(currentSignupData ?? {}) };
+            let shortcut: {
+              nextStep: SignupStep;
+              responseMessage: string;
+              quickReplies: string[];
+              signupData: Record<string, unknown>;
+            } | null = null;
+
+            if (currentSignupStep === "terms_agreement") {
+              shortcut = {
+                nextStep: "identity_verification",
+                responseMessage: "이제 본인 확인을 진행해 주세요.",
+                quickReplies: [],
+                signupData: { ...base, agreedToTerms: true },
+              };
+            } else if (currentSignupStep === "identity_verification") {
+              const selectableSteps = (plan.choiceBenefits ?? []).filter(
+                (b) => b.options.length > 0,
+              );
+              const existingSelected = base.selectedBenefits as
+                Record<string, string[]> | undefined;
+              const requiredSteps = selectableSteps.filter((b) => b.required);
+              const allRequiredFilled = requiredSteps.every(
+                (b) =>
+                  (existingSelected?.[b.code]?.length ?? 0) >= b.selectionCount,
+              );
+
+              const identitySignupData = {
+                ...base,
+                identityVerified: true,
+                ...(identityVerification
+                  ? {
+                      name: identityVerification.name,
+                      birth: identityVerification.birth,
+                      phoneNumber: identityVerification.phoneNumber,
+                    }
+                  : {}),
+              };
+
+              // 선택할 혜택이 없거나(요금제 자체에 없음), 상세 페이지에서 미리 골라둔
+              // 값으로 필수 항목이 이미 다 채워져 있으면 select_benefits를 건너뜀
+              if (selectableSteps.length === 0 || allRequiredFilled) {
+                shortcut = {
+                  nextStep: "select_payment",
+                  responseMessage:
+                    selectableSteps.length > 0
+                      ? "이미 선택하신 혜택으로 진행할게요. 이제 요금 납부 방법을 선택해 주세요."
+                      : "본인 확인이 완료됐어요. 이제 요금 납부 방법을 선택해 주세요.",
+                  quickReplies: [
+                    "계좌이체",
+                    "신용카드",
+                    "카카오페이",
+                    "네이버페이",
+                    "토스",
+                  ],
+                  signupData: identitySignupData,
+                };
+              }
+              // else: 아직 고를 혜택이 남아있음 — AI가 목록을 안내해야 하므로 아래
+              // getSignupDecision으로 진행함 (shortcut은 null로 남김)
+            }
+
+            if (shortcut) {
+              if (!isStopped()) {
+                socket.emit("chunk", shortcut.responseMessage);
+              }
+              if (isStopped()) {
+                return;
+              }
+
+              await saveMessage(
+                currentSessionId,
+                "ai",
+                shortcut.responseMessage,
+              );
+              if (shortcut.nextStep === "identity_verification") {
+                await saveMessage(
+                  currentSessionId,
+                  "ai",
+                  "",
+                  undefined,
+                  "identity_verification",
+                );
+              }
+
+              await updateSignupCollectedData(
+                currentSessionId,
+                shortcut.signupData,
+              );
+              signupCollectedData = shortcut.signupData;
+              await recordConversionEvent(currentSessionId, "signup_started");
+
+              socket.emit("signup", {
+                signupStep: shortcut.nextStep,
+                signupData: shortcut.signupData,
+              });
+              socket.emit("quickReplies", shortcut.quickReplies);
+              socket.emit("done");
+              return;
+            }
+          }
+
           const { decision, interactionId } = await getSignupDecision(
             {
               message,
@@ -414,27 +550,6 @@ export function setupChatSocket(io: Server) {
           // (가입 플로우 첫 턴은 위에서 AI 호출 없이 이미 처리되고 return되므로, 이
           // 아래는 항상 currentSignupStep이 있는 이후 턴에서만 실행됨)
 
-          // 약관 동의/본인인증처럼 지정된 UI(버튼·모달)를 통해서만 다음 단계로
-          // 넘어가야 하는 단계들. 애매한 자유 텍스트("음" 등)를 AI가 완료 의사로
-          // 오판해 넘겨버리는 걸 막기 위해 결정론적으로 검증함. 정해진 문구로
-          // 시작하는 메시지가 아니면, 그 사이 다른 질문에 대한 AI의 답변은 그대로
-          // 쓰되 단계만 되돌리고 안내 문구를 덧붙임.
-          // fraud_warning은 여기 포함하지 않음 — 버튼/고정 문구가 아니라 AI가 자유
-          // 텍스트의 긍정/부정 의미를 직접 판단해서 진행 여부를 결정해야 하는 단계라서
-          const GATED_SIGNUP_STEPS: Record<
-            string,
-            { triggerPrefix: string; nudge: string }
-          > = {
-            terms_agreement: {
-              triggerPrefix: "동의합니다",
-              nudge: "위 약관에 모두 동의하신 뒤 **다음** 버튼을 눌러주세요.",
-            },
-            identity_verification: {
-              triggerPrefix: "본인인증 완료",
-              nudge:
-                "카드에 이름·생년월일·휴대폰 번호를 입력하고 본인인증을 완료해 주세요.",
-            },
-          };
           const gate = currentSignupStep
             ? GATED_SIGNUP_STEPS[currentSignupStep]
             : undefined;
@@ -478,6 +593,26 @@ export function setupChatSocket(io: Server) {
             ) {
               decision.signupStep = pausedStep ?? "paused";
             }
+          }
+
+          // AI가 매 턴 signupData 전체를 다시 구성해서 돌려주는데, 이번 턴에서
+          // 다루지 않은 필드(예: 요금제 상세 페이지에서 미리 골라둔 선택형 혜택)를
+          // 빈 값으로 지어내 돌려주는 경우가 있어서, 그로 인해 이미 누적된 값이
+          // 조용히 사라지는 문제가 있었음. AI가 실제로 뭔가 채워서 보내지 않는 한
+          // (빈 객체가 아닌 한) 기존에 누적된 선택형 혜택을 유지함
+          const priorSelectedBenefits = currentSignupData?.selectedBenefits as
+            Record<string, string[]> | undefined;
+          const aiSelectedBenefits = decision.signupData?.selectedBenefits;
+          if (
+            priorSelectedBenefits &&
+            Object.keys(priorSelectedBenefits).length > 0 &&
+            (!aiSelectedBenefits ||
+              Object.keys(aiSelectedBenefits).length === 0)
+          ) {
+            decision.signupData = {
+              ...decision.signupData,
+              selectedBenefits: priorSelectedBenefits,
+            };
           }
 
           await saveMessage(currentSessionId, "ai", decision.message);
