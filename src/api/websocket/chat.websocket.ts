@@ -393,17 +393,32 @@ export function setupChatSocket(io: Server) {
             return;
           }
 
-          // paused 상태에서 사용자가 가입 자체를 그만두고 싶어할 때. "가입 중단하기"는
-          // 이 기능이 직접 제시하는 정해진 문구라, 이게 그대로 오면 AI 호출 없이
-          // 즉시 처리함. signupStep을 유지한 채로는 이 전환을 표현할 방법이 없으므로
-          // (가입 스키마엔 "가입을 아예 벗어난다"는 개념이 없음), 프론트에 signup_exit을
-          // emit해서 preselectedPlanCode를 더 이상 안 보내게 하고, 이후 대화는 일반
-          // 상담으로 자연스럽게 넘어가도록 함. 후속 질문 없이 조용히 빠져나감 — 이
-          // quickReply를 선택한 것 자체가 이미 명확한 의사표시라 별도 확인 불필요
-          if (
-            currentSignupStep === "paused" &&
-            message.trim() === "가입 중단하기"
-          ) {
+          // paused 상태에서 "가입 중단하기" 버튼 대신 자유 텍스트로 명확히 거부
+          // 의사를 밝히는 경우(예: "가입하기 싫다고")도 버튼을 누른 것과 동일하게
+          // 즉시 종료함 — signupStep 스키마로는 AI가 "이탈"을 직접 표현할 수 없어서,
+          // 버튼 재확인만 반복 요구하던 문제가 있었음
+          const EXPLICIT_SIGNUP_REJECTION_PATTERNS = [
+            "가입하기 싫",
+            "가입 안 할",
+            "가입 안할",
+            "그만할래",
+            "그만 할래",
+            "그만할게",
+            "가입 취소",
+            "취소할래",
+          ];
+          const trimmedMessage = message.trim();
+          const isExplicitSignupExit =
+            trimmedMessage === "가입 중단하기" ||
+            (currentSignupStep === "paused" &&
+              EXPLICIT_SIGNUP_REJECTION_PATTERNS.some((pattern) =>
+                trimmedMessage.includes(pattern),
+              ));
+
+          // currentSignupStep을 "paused"로 한정하면, GATED 불일치 안내를 막 받아
+          // 프론트가 아직 이전 단계값을 들고 있는 타이밍에 종료 문구가 반복되는
+          // 문제가 있어서, 가입 플로우 중이기만 하면 항상 즉시 이탈로 처리함
+          if (currentSignupStep && isExplicitSignupExit) {
             const exitMessage =
               "네, 가입은 여기서 멈출게요. 다른 요금제가 궁금하시면 편하게 물어보시고, 필요하실 때 요금제 상세 페이지에서 가입을 다시 시작하시면 돼요!";
 
@@ -695,6 +710,39 @@ export function setupChatSocket(io: Server) {
             return;
           }
 
+          // "확인했어요" 버튼을 정확히 그대로 탭하면 GATED 단계들처럼 AI 호출 없이
+          // 즉시 다음 단계로 넘김. 자유 텍스트 답변은 여전히 AI가 긍정/부정을 판단함
+          if (
+            currentSignupStep === "fraud_warning" &&
+            message.trim() === "확인했어요"
+          ) {
+            const termsMessage =
+              "이제 약관에 동의해 주세요. 아래 약관을 확인하시고 모두 동의하신 뒤 **다음** 버튼을 눌러주세요.";
+
+            if (!isStopped()) {
+              socket.emit("chunk", termsMessage);
+            }
+            if (isStopped()) {
+              return;
+            }
+
+            await saveMessage(currentSessionId, "ai", termsMessage);
+            await saveMessage(currentSessionId, "ai", "", undefined, "terms");
+
+            const base = { ...(currentSignupData ?? {}) };
+            await updateSignupCollectedData(currentSessionId, base);
+            signupCollectedData = base;
+            await recordConversionEvent(currentSessionId, "signup_started");
+
+            socket.emit("signup", {
+              signupStep: "terms_agreement",
+              signupData: base,
+            });
+            socket.emit("quickReplies", []);
+            socket.emit("done");
+            return;
+          }
+
           const { decision, interactionId } = await getSignupDecision(
             {
               message,
@@ -761,8 +809,20 @@ export function setupChatSocket(io: Server) {
               currentSignupStep as SignupStep,
             );
             const toIdx = SIGNUP_STEP_ORDER.indexOf(decision.signupStep);
-            if (fromIdx !== -1 && toIdx !== -1 && toIdx > fromIdx + 1) {
-              decision.signupStep = SIGNUP_STEP_ORDER[fromIdx + 1];
+            if (fromIdx !== -1 && toIdx !== -1) {
+              if (toIdx > fromIdx + 1) {
+                decision.signupStep = SIGNUP_STEP_ORDER[fromIdx + 1];
+              } else if (toIdx < fromIdx) {
+                // AI가 "다른 요금제로 바꾸고 싶다"는 의사를 이전 단계로 되돌리는
+                // 것으로 잘못 표현하는 경우가 있어서(쌓인 signupData는 그대로 둔 채
+                // 이전 카드만 다시 띄움), 뒤로 가는 건 항상 paused로 강제함
+                decision.signupStep = "paused";
+                decision.signupData = {
+                  ...(decision.signupData ?? {}),
+                  pausedStep: currentSignupStep as SignupStep,
+                };
+                decision.quickReplies = ["가입 계속하기", "가입 중단하기"];
+              }
             }
           }
 
@@ -1076,6 +1136,69 @@ export function setupChatSocket(io: Server) {
         // 프론트에 전달되어, 이전 턴 칩이 화면에 남아있지 않음
         if (decision.action === "ask") {
           socket.emit("quickReplies", decision.quickReplies ?? []);
+        }
+
+        // 일반 상담 중 특정 요금제 가입 의사가 명확해진 경우. preselectedPlan은
+        // 요금제 상세 페이지 버튼을 눌러야만 채워지는 프론트 상태라 여기서 직접
+        // 못 채우므로, signup_kickoff_requested로 신호만 보내 그 버튼을 누른 것과
+        // 동일하게 처리함. 비회원은 애초에 가입 플로우에 못 들어가므로 userId가
+        // 있을 때만 보냄
+        if (decision.action === "signup" && decision.signupPlanCode && userId) {
+          const kickoffPlan = candidates.find(
+            (p) => p.code === decision.signupPlanCode,
+          );
+          if (kickoffPlan) {
+            // 이미 채팅으로 가입 의사를 밝힌 뒤라 "선택하셨군요! 도와드릴까요?"
+            // 재확인은 생략하고, 사기 예방 안내(가입 첫 턴)를 같은 턴에 이어붙임
+            const fraudWarningMessage =
+              "가입을 진행하기 전에 먼저 개통 사기 예방을 위한 안내를 드릴게요.\n\n" +
+              "휴대폰·유심 개통 목적을 반드시 직접 확인하시고, 타인에게 양도하거나 " +
+              "금융 사기에 이용되는 경우 법적 책임이 발생할 수 있습니다.\n\n" +
+              "안내 내용을 확인하셨다면 아래 '확인했어요'를 눌러주시거나, 채팅으로 확인했다고 말씀해 주세요.";
+
+            if (!isStopped()) {
+              socket.emit("chunk", "\n\n" + fraudWarningMessage);
+            }
+            if (isStopped()) {
+              return;
+            }
+
+            // decision.message는 위에서 이미 저장했으므로, 여기서는 이어붙인
+            // 텍스트만 별도 행으로 저장함(실시간 화면엔 한 말풍선, 복원 시엔 두
+            // 말풍선 — 텍스트 중복 저장보다 나은 절충안)
+            await saveMessage(currentSessionId, "ai", fraudWarningMessage);
+            await saveMessage(
+              currentSessionId,
+              "ai",
+              "",
+              undefined,
+              "fraud_warning",
+            );
+
+            // 일반 상담 맥락을 이어받지 않도록 AI 메모리를 끊고 새로 시작함
+            previousInteractionId = undefined;
+            await updateLastInteractionId(currentSessionId, null);
+
+            await updateSignupCollectedData(currentSessionId, {});
+            signupCollectedData = {};
+            await recordConversionEvent(currentSessionId, "signup_started");
+
+            socket.emit("signup", {
+              signupStep: "fraud_warning",
+              signupData: {},
+            });
+            socket.emit("quickReplies", ["확인했어요"]);
+
+            // "signup"보다 반드시 나중에 보내야 함 — currentSignupStep이 먼저
+            // 채워져 있어야 preselectedPlan이 채워질 때 인삿말 effect가 "새로
+            // 진입"으로 오판해 중복 실행되지 않음 (소켓 이벤트는 보낸 순서대로 도착)
+            socket.emit("signup_kickoff_requested", {
+              code: kickoffPlan.code,
+              name: kickoffPlan.name,
+              monthlyFee: kickoffPlan.discount_fee ?? kickoffPlan.monthly_fee,
+              recommendedByAI: true,
+            });
+          }
         }
 
         socket.emit("done");

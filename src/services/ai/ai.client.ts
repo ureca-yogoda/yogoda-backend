@@ -20,6 +20,16 @@ import type {
 
 export type PersonaAnalysisLocale = "ko" | "en";
 
+// Gemini가 응답을 시작하지 못한 채 계속 붙잡고 있는 경우를 대비한 서버 쪽 안전장치.
+// 프론트는 30초 뒤 자체적으로 타임아웃 에러를 보여주지만, 백엔드 요청 자체엔 이게
+// 없으면 응답이 올 때까지(또는 커넥션이 죽을 때까지) 계속 붙들려 있게 됨
+const AI_RESPONSE_TIMEOUT_MS = 60_000;
+
+function withTimeout(signal: AbortSignal | undefined, ms: number): AbortSignal {
+  const timeoutSignal = AbortSignal.timeout(ms);
+  return signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+}
+
 const PERSONA_ANALYSIS_TYPES = [
   "data_heavy",
   "content_balanced",
@@ -222,7 +232,7 @@ async function streamInteractionMessage(
     url: "https://generativelanguage.googleapis.com/v1beta/interactions?alt=sse",
     headers: { "x-goog-api-key": env.AI_API_KEY },
     responseType: "stream",
-    signal,
+    signal: withTimeout(signal, AI_RESPONSE_TIMEOUT_MS),
     data: {
       model,
       input,

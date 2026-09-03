@@ -195,6 +195,20 @@ export async function notifyIncompleteConsultations() {
   return { checked: idleSessions.length };
 }
 
+/**
+ * 세션이 끝나거나 삭제되면, 그 세션에 대해 이미 보낸 "상담 미완료" 리마인드
+ * 알림은 더 이상 유효하지 않으므로 함께 지웁니다.
+ */
+export async function clearConsultationIncompleteNotification(
+  userId: string,
+  sessionId: string,
+) {
+  await NotificationModel.deleteOne({
+    user_id: userId,
+    dedupe_key: `consultation_incomplete:${sessionId}`,
+  });
+}
+
 // 목록 조회 시 가져올 최대 알림 개수
 const NOTIFICATION_LIST_LIMIT = 10;
 
