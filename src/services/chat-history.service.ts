@@ -13,6 +13,7 @@ import {
   type ChatSessionFunnelStage,
 } from "../models/chat-session.model.js";
 import { getActivePromptVersion } from "./prompt.service.js";
+import { clearConsultationIncompleteNotification } from "./notification.service.js";
 import type { SurveyAnswers } from "../types/chat.js";
 
 /**
@@ -118,10 +119,15 @@ export async function resolveChatSession(
  * 본인 소유의 진행 중인 세션이 아니면 아무 것도 하지 않습니다.
  */
 export async function endChatSession(userId: string, sessionId: string) {
-  await ChatSessionModel.updateOne(
+  const result = await ChatSessionModel.updateOne(
     { _id: sessionId, user_id: userId, type: "AIChat", ended_at: null },
     { $set: { ended_at: new Date() } },
   );
+
+  if (result.modifiedCount > 0) {
+    // 세션이 끝났으니 "상담 미완료" 리마인드 알림이 남아있었다면 함께 지움
+    await clearConsultationIncompleteNotification(userId, sessionId);
+  }
 }
 
 /**
@@ -234,8 +240,9 @@ export async function recordConversionEvent(
  * 통째로 삭제합니다. (ui_events는 세션 status와 무관하게 독립적으로 집계되므로 영향 없음)
  */
 export async function finalizeSessionStatus(sessionId: string) {
-  const session =
-    await ChatSessionModel.findById(sessionId).select("status last_stage");
+  const session = await ChatSessionModel.findById(sessionId).select(
+    "status last_stage user_id",
+  );
   if (!session || session.status !== null) return;
 
   const hasUserMessage = await ChatMessageModel.exists({
@@ -246,6 +253,10 @@ export async function finalizeSessionStatus(sessionId: string) {
   if (!hasUserMessage) {
     await ChatMessageModel.deleteMany({ session_id: sessionId });
     await ChatSessionModel.deleteOne({ _id: sessionId });
+    if (session.user_id) {
+      // 세션 자체가 사라졌으니 "상담 미완료" 리마인드 알림도 함께 지움
+      await clearConsultationIncompleteNotification(session.user_id, sessionId);
+    }
     return;
   }
 
