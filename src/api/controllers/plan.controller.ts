@@ -51,7 +51,7 @@ function getSelectedOptions(body: unknown): SelectedPlanOptions | null {
 }
 
 export const getPlansHandler = async (
-  req: Request,
+  _req: Request,
   res: Response,
   next: NextFunction,
 ) => {

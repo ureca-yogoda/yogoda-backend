@@ -68,7 +68,7 @@ export async function resolveChatSession(
   userId: string | null,
   sessionId?: string,
 ) {
-  if (sessionId) {
+  if (sessionId && mongoose.isValidObjectId(sessionId)) {
     const ownershipFilter = userId
       ? { $or: [{ user_id: userId }, { user_id: null }] }
       : { user_id: null };
@@ -276,7 +276,7 @@ export async function claimGuestSession(userId: string, sessionId: string) {
   return ChatSessionModel.findOneAndUpdate(
     { _id: sessionId, type: "AIChat", user_id: null, ended_at: null },
     { $set: { user_id: userId } },
-    { new: true },
+    { returnDocument: "after" },
   );
 }
 

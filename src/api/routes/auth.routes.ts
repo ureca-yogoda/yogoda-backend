@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { env } from "../../core/config/env.js";
 import {
   kakaoLoginHandler,
   naverLoginHandler,
@@ -9,6 +10,25 @@ import {
 import { authMiddleware } from "../../core/middlewares/auth.middleware.js";
 
 const router = Router();
+
+// Cross-site refresh cookies require an explicit origin check for browser POSTs.
+router.use((req, res, next) => {
+  const origin = req.get("origin");
+  const allowedOrigins = env.CORS_ORIGIN.split(",").map((value) =>
+    value.trim(),
+  );
+  if (
+    req.method !== "GET" &&
+    ((origin &&
+      req.get("sec-fetch-site") !== "same-origin" &&
+      !allowedOrigins.includes(origin)) ||
+      (!origin && req.get("sec-fetch-site") === "cross-site"))
+  ) {
+    res.status(403).json({ message: "허용되지 않은 요청 출처입니다." });
+    return;
+  }
+  next();
+});
 
 /**
  * @swagger

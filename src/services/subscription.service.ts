@@ -80,7 +80,7 @@ export async function addMySubscription(
       },
       $setOnInsert: { user_id: userId, service_code: input.serviceCode },
     },
-    { new: true, upsert: true, runValidators: true },
+    { returnDocument: "after", upsert: true, runValidators: true },
   ).lean();
 
   if (!subscription) {
@@ -110,7 +110,7 @@ export async function updateMySubscription(
   const subscription = await UserSubscriptionModel.findOneAndUpdate(
     { _id: subscriptionId, user_id: userId },
     { $set: set },
-    { new: true, runValidators: true },
+    { returnDocument: "after", runValidators: true },
   ).lean();
 
   if (!subscription) {

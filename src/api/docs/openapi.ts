@@ -52,7 +52,7 @@
  *         scenario: { type: string, enum: [baseline, usage-drop] }
  *         period: { type: string, example: 2026-09 }
  *         dataUsed: { type: number }
- *         dataLimit: { type: number }
+ *         dataLimit: { type: number, nullable: true, description: "null means unlimited data" }
  *         callMinutes: { type: number }
  *         subscriptionCount: { type: integer }
  *         monthlyFee: { type: number }

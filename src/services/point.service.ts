@@ -1,4 +1,4 @@
-import { Types } from "mongoose";
+import { Types, type ClientSession } from "mongoose";
 
 import { PointTransactionModel } from "../models/point-transaction.model.js";
 
@@ -7,11 +7,12 @@ export async function addPoints(
   amount: number,
   reason: string,
   sourceKey: string,
+  session?: ClientSession,
 ) {
   return PointTransactionModel.findOneAndUpdate(
     { user_id: userId, source_key: sourceKey },
     { $setOnInsert: { amount, reason } },
-    { returnDocument: "after", upsert: true },
+    { returnDocument: "after", upsert: true, session },
   );
 }
 

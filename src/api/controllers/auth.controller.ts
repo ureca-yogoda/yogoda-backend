@@ -14,7 +14,8 @@ import {
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: env.NODE_ENV === "production",
-  sameSite: "strict" as const,
+  sameSite:
+    env.NODE_ENV === "production" ? ("none" as const) : ("lax" as const),
   path: "/",
   maxAge: Number(env.REFRESH_TOKEN_EXPIRE_DAYS) * 24 * 60 * 60 * 1000,
 };

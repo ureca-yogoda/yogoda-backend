@@ -93,7 +93,7 @@ export const createAndDeployPrompt = async (
         char_count: content.length,
       },
     },
-    { upsert: true, new: true },
+    { upsert: true, returnDocument: "after" },
   );
 
   return {
@@ -348,7 +348,7 @@ export const saveDraft = async (
         updated_by: adminId,
       },
     },
-    { upsert: true, new: true },
+    { upsert: true, returnDocument: "after" },
   ).populate<{ updated_by: PopulatedDeployer }>("updated_by", "nickname");
 
   return {

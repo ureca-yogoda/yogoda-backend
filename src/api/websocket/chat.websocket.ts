@@ -1,8 +1,13 @@
 import { Server, Socket } from "socket.io";
+import { consumeChatQuota } from "../../core/middlewares/rate-limit.js";
+import {
+  assertSignupReady,
+  validateIdentityInput,
+} from "../../services/signup-validation.js";
 
 import { env } from "../../core/config/env.js";
 import { FUNNEL_STAGES } from "../../constants/funnel-stage.js";
-import { verifyToken } from "../../core/security/jwt.js";
+import { verifyAccessToken } from "../../core/security/jwt.js";
 import type { ChatSessionFunnelStage } from "../../models/chat-session.model.js";
 import type {
   UiEventAction,
@@ -166,7 +171,7 @@ function resolveSelectedBenefitTitles(
 function resolveConnectionUserId(token: string | undefined): string | null {
   if (!token) return null;
   try {
-    const payload = verifyToken(token);
+    const payload = verifyAccessToken(token);
     return (payload.userId as string | undefined) ?? null;
   } catch (err) {
     console.error("소켓 토큰 검증 실패, 비회원으로 처리합니다:", err);
@@ -215,12 +220,34 @@ export function setupChatSocket(io: Server) {
 
     const { token, sessionId } = socket.handshake.auth as ChatSocketAuth;
     const userId = resolveConnectionUserId(token);
+    if (token && !userId) {
+      socket.emit("error", "로그인 정보가 만료되었어요. 다시 로그인해 주세요.");
+      socket.disconnect();
+      return;
+    }
 
     let currentSessionId: string;
     let promptContent: string;
     let collectedInfo: SurveyAnswers | undefined;
     let signupCollectedData: Record<string, unknown> | undefined;
     let previousInteractionId: string | undefined;
+    let serverSignupStep: SignupStep | undefined;
+    let serverPlanCode: string | undefined;
+    let processingMessage = false;
+
+    async function emitSignup(data: {
+      signupStep?: SignupStep;
+      signupData?: Record<string, unknown> | SignupCollectedData;
+    }) {
+      const nextStep = data.signupStep ?? serverSignupStep;
+      await updateSignupCollectedData(currentSessionId, {
+        ...signupCollectedData,
+        _serverStep: nextStep,
+        _serverPlanCode: serverPlanCode,
+      });
+      serverSignupStep = nextStep;
+      socket.emit("signup", { ...data, signupData: signupCollectedData ?? {} });
+    }
     // 진행 중인 AI 응답을 식별하는 id. "stop" 이벤트가 오면 stoppedRequestId에
     // 현재 요청 id를 기록해, 그 요청에 속한 이후의 emit/DB 처리를 모두 건너뜀
     let activeRequestId: string | null = null;
@@ -240,6 +267,10 @@ export function setupChatSocket(io: Server) {
         (session.signup_collected_data as Record<string, unknown> | null) ??
         undefined;
       previousInteractionId = session.last_interaction_id ?? undefined;
+      serverSignupStep = signupCollectedData?._serverStep as
+        SignupStep | undefined;
+      serverPlanCode = signupCollectedData?._serverPlanCode as
+        string | undefined;
 
       console.log(
         `[세션 ${currentSessionId}] 사용 중인 프롬프트 버전:`,
@@ -250,9 +281,19 @@ export function setupChatSocket(io: Server) {
         sessionId: currentSessionId,
         promptVersion: session.prompt_version,
       });
-    })();
+      return true;
+    })().catch((error: unknown) => {
+      console.error("채팅 세션 초기화 실패:", error);
+      socket.emit("error", "상담을 시작하지 못했어요. 다시 연결해 주세요.");
+      socket.disconnect();
+      return false;
+    });
 
     socket.on("message", async (payload: ChatMessagePayload) => {
+      if (!payload || typeof payload !== "object") {
+        socket.emit("error", "메시지가 유효하지 않습니다.");
+        return;
+      }
       const {
         message,
         simulateError,
@@ -261,11 +302,14 @@ export function setupChatSocket(io: Server) {
         recommendedByAI = false,
         isKickoff = false,
         signupCollectedData: clientSignupData,
-        currentSignupStep,
         identityVerification,
       } = payload;
 
-      if (!message || message.trim() === "") {
+      if (
+        typeof message !== "string" ||
+        message.trim() === "" ||
+        message.length > 4096
+      ) {
         socket.emit("error", "메시지가 유효하지 않습니다.");
         return;
       }
@@ -273,6 +317,18 @@ export function setupChatSocket(io: Server) {
       // 이번 요청을 식별할 id를 발급함. "stop" 이벤트는 이 id를 stoppedRequestId에
       // 기록하므로, 이후 코드는 requestId === stoppedRequestId 여부로 중단 여부를 판단함
       const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      try {
+        if (token) verifyAccessToken(token);
+        await consumeChatQuota(userId, socket.handshake.address ?? "unknown");
+      } catch {
+        socket.emit(
+          "error",
+          "요청 한도를 초과했거나 로그인이 만료되었어요. 잠시 후 다시 시도해 주세요.",
+        );
+        return;
+      }
+      // Ignore overlapping messages before replacing the active cancellation target.
+      if (processingMessage) return;
       activeRequestId = requestId;
       const isStopped = () => stoppedRequestId === requestId;
       const abortController = new AbortController();
@@ -299,10 +355,22 @@ export function setupChatSocket(io: Server) {
       // 로딩 문구는 세션 조회·DB 저장(await sessionReady, saveMessage) 같은 비동기
       // 작업을 하나도 거치지 않고, 메시지를 받자마자 동기적으로 가장 먼저 보냄.
       // getThinkingMessage는 payload만으로 계산되므로 이 시점에 바로 알 수 있음
-      socket.emit("thinking", getThinkingMessage(message, currentSignupStep));
+      if (processingMessage) return;
+      processingMessage = true;
+      socket.emit("thinking", getThinkingMessage(message, serverSignupStep));
 
       try {
-        await sessionReady;
+        if (!(await sessionReady)) return;
+        if (
+          preselectedPlanCode &&
+          (preselectedPlanCode !== serverPlanCode ||
+            message.trim() === "처음부터 다시")
+        ) {
+          serverSignupStep = undefined;
+          serverPlanCode = preselectedPlanCode;
+          signupCollectedData = {};
+        }
+        const currentSignupStep = serverSignupStep;
 
         // 킥오프 메시지는 DB에 사용자 메시지로 저장하지 않음
         if (!isKickoff) {
@@ -324,10 +392,16 @@ export function setupChatSocket(io: Server) {
 
         // ── 가입 플로우 분기 ──────────────────────────────────────────────────
         if (preselectedPlanCode) {
-          // 클라이언트가 보내온 최신 signupData를 우선 사용
-          const currentSignupData = clientSignupData
-            ? (clientSignupData as unknown as Record<string, unknown>)
-            : signupCollectedData;
+          // 동의/본인 확인/단계는 서버가 수집한 값만 사용합니다.
+          const currentSignupData = { ...signupCollectedData };
+          if (
+            clientSignupData?.selectedBenefits &&
+            (!currentSignupStep || currentSignupStep === "select_benefits")
+          ) {
+            currentSignupData.selectedBenefits =
+              clientSignupData.selectedBenefits;
+          }
+          signupCollectedData = currentSignupData;
 
           const plan = (await getPlanByCode(
             preselectedPlanCode,
@@ -364,9 +438,12 @@ export function setupChatSocket(io: Server) {
           async function completeSignup() {
             // preselectedPlanCode가 있는 분기 안에서만 호출되지만, 클로저 캡처값이라
             // TS가 못 좁혀서 다시 확인함
-            if (!userId || !preselectedPlanCode) return;
+            if (!userId || !preselectedPlanCode) {
+              throw new Error("로그인 후 가입해 주세요.");
+            }
 
             const sd = signupCollectedData as SignupCollectedData | undefined;
+            assertSignupReady(serverSignupStep, sd, plan.choiceBenefits);
             const selectedBenefits =
               (sd?.selectedBenefits as Record<string, string[]> | undefined) ??
               {};
@@ -396,6 +473,7 @@ export function setupChatSocket(io: Server) {
                 }
               }
 
+              await emitSignup({ signupStep: "completed", signupData: sd });
               // 요금제 변경 자체가 성공하면 즉시 완료 화면을 표시합니다.
               // 퍼널/대화 기록 실패가 실제 가입 성공을 UI 오류로 뒤집으면 안 됩니다.
               socket.emit("signup_complete", {
@@ -526,7 +604,7 @@ export function setupChatSocket(io: Server) {
               await recordConversionEvent(currentSessionId, "signup_started");
             }
 
-            socket.emit("signup", {
+            await emitSignup({
               signupStep: "fraud_warning",
               signupData: currentSignupData ?? {},
             });
@@ -583,6 +661,8 @@ export function setupChatSocket(io: Server) {
             // 있으므로 서버 쪽 가입 수집 데이터도 함께 비움
             await updateSignupCollectedData(currentSessionId, {});
             signupCollectedData = {};
+            serverSignupStep = undefined;
+            serverPlanCode = undefined;
 
             socket.emit("signup_exit");
             socket.emit("quickReplies", []);
@@ -669,7 +749,7 @@ export function setupChatSocket(io: Server) {
                 );
               }
 
-              socket.emit("signup", {
+              await emitSignup({
                 signupStep: pausedStep,
                 signupData: resumedSignupData,
               });
@@ -729,6 +809,7 @@ export function setupChatSocket(io: Server) {
                 signupData: { ...base, agreedToTerms: true },
               };
             } else if (currentSignupStep === "identity_verification") {
+              validateIdentityInput(identityVerification);
               const selectableSteps = (plan.choiceBenefits ?? []).filter(
                 (b) => b.options.length > 0,
               );
@@ -751,6 +832,13 @@ export function setupChatSocket(io: Server) {
                     }
                   : {}),
               };
+
+              Object.assign(currentSignupData, identitySignupData);
+              signupCollectedData = currentSignupData;
+              await updateSignupCollectedData(
+                currentSessionId,
+                currentSignupData,
+              );
 
               // 선택할 혜택이 없거나(요금제 자체에 없음), 상세 페이지에서 미리 골라둔
               // 값으로 필수 항목이 이미 다 채워져 있으면 select_benefits를 건너뜀
@@ -805,7 +893,7 @@ export function setupChatSocket(io: Server) {
               signupCollectedData = shortcut.signupData;
               await recordConversionEvent(currentSessionId, "signup_started");
 
-              socket.emit("signup", {
+              await emitSignup({
                 signupStep: shortcut.nextStep,
                 signupData: shortcut.signupData,
               });
@@ -843,7 +931,7 @@ export function setupChatSocket(io: Server) {
             await updateSignupCollectedData(currentSessionId, pausedSignupData);
             signupCollectedData = pausedSignupData;
 
-            socket.emit("signup", {
+            await emitSignup({
               signupStep: "paused",
               signupData: pausedSignupData,
             });
@@ -871,12 +959,15 @@ export function setupChatSocket(io: Server) {
             await saveMessage(currentSessionId, "ai", termsMessage);
             await saveMessage(currentSessionId, "ai", "", undefined, "terms");
 
-            const base = { ...(currentSignupData ?? {}) };
+            const base = {
+              ...(currentSignupData ?? {}),
+              fraudWarningAcknowledged: true,
+            };
             await updateSignupCollectedData(currentSessionId, base);
             signupCollectedData = base;
             await recordConversionEvent(currentSessionId, "signup_started");
 
-            socket.emit("signup", {
+            await emitSignup({
               signupStep: "terms_agreement",
               signupData: base,
             });
@@ -929,7 +1020,7 @@ export function setupChatSocket(io: Server) {
             );
             signupCollectedData = paymentSignupData;
 
-            socket.emit("signup", {
+            await emitSignup({
               signupStep: "final_confirm",
               signupData: paymentSignupData,
             });
@@ -943,15 +1034,8 @@ export function setupChatSocket(io: Server) {
             currentSignupStep === "final_confirm" &&
             message.trim() === "가입 신청하기"
           ) {
-            socket.emit("signup", {
-              signupStep: "completed",
-              signupData: currentSignupData ?? {},
-            });
             socket.emit("quickReplies", []);
-
-            if (userId) {
-              await completeSignup();
-            }
+            await completeSignup();
 
             if (!isStopped()) {
               socket.emit("done");
@@ -1078,6 +1162,30 @@ export function setupChatSocket(io: Server) {
             };
           }
 
+          // AI는 확인하지 않은 동의/인증/결제 정보를 생성하거나 가입을 확정할 수 없습니다.
+          decision.signupData = {
+            ...decision.signupData,
+            agreedToTerms: currentSignupData.agreedToTerms === true,
+            identityVerified: currentSignupData.identityVerified === true,
+            fraudWarningAcknowledged:
+              currentSignupData.fraudWarningAcknowledged === true ||
+              (currentSignupStep === "fraud_warning" &&
+                decision.signupStep === "terms_agreement"),
+            name: currentSignupData.name as string | undefined,
+            birth: currentSignupData.birth as string | undefined,
+            phoneNumber: currentSignupData.phoneNumber as string | undefined,
+            paymentMethod:
+              currentSignupStep === "select_payment" &&
+              PAYMENT_METHOD_QUICK_REPLIES.includes(
+                decision.signupData?.paymentMethod ?? "",
+              )
+                ? decision.signupData?.paymentMethod
+                : (currentSignupData.paymentMethod as SignupCollectedData["paymentMethod"]),
+          };
+          if (decision.signupStep === "completed") {
+            decision.signupStep = "final_confirm";
+            decision.quickReplies = ["가입 신청하기"];
+          }
           await saveMessage(currentSessionId, "ai", decision.message);
 
           // 카드 타입 메시지 DB 저장 (재접속/관리자 열람 시 복원용, planSnapshot은
@@ -1183,7 +1291,7 @@ export function setupChatSocket(io: Server) {
 
           // 프론트에 현재 signup 단계 알림. 텍스트 스트림이 다 끝난 뒤에 보내야
           // 약관동의/사기경고/최종확인 카드가 채팅 답변보다 먼저 뜨지 않음
-          socket.emit("signup", {
+          await emitSignup({
             signupStep: decision.signupStep,
             signupData: decision.signupData,
           });
@@ -1192,84 +1300,6 @@ export function setupChatSocket(io: Server) {
           // 퀵답변이 없다고 AI가 판단했을 때 프론트가 그 사실을 못 받아 이전
           // 턴의 칩이 화면에 그대로 남아있는 문제가 있었음
           socket.emit("quickReplies", decision.quickReplies ?? []);
-
-          // 가입 완료 처리
-          if (decision.signupStep === "completed" && userId) {
-            const sd = signupCollectedData as SignupCollectedData | undefined;
-            const selectedBenefits =
-              (sd?.selectedBenefits as Record<string, string[]> | undefined) ??
-              {};
-            const paymentMethod = sd?.paymentMethod ?? "신용카드";
-
-            console.log("[가입 DB] 시도:", {
-              userId,
-              planCode: preselectedPlanCode,
-              selectedBenefits,
-              paymentMethod,
-            });
-
-            try {
-              try {
-                await subscribeUserToPlan({
-                  userId,
-                  planCode: preselectedPlanCode,
-                  selectedOptions: selectedBenefits,
-                  paymentMethod,
-                });
-              } catch (subscribeError) {
-                // DB 반영 직후 연결이 끊겨 완료 이벤트만 유실된 경우의 재시도는
-                // 이미 같은 요금제를 이용 중이면 성공으로 간주합니다.
-                const currentPlan = await getCurrentPlan(userId);
-                if (currentPlan?.planCode !== preselectedPlanCode) {
-                  throw subscribeError;
-                }
-              }
-
-              // 요금제 변경 자체가 성공하면 즉시 완료 화면을 표시합니다.
-              // 퍼널/대화 기록 실패가 실제 가입 성공을 UI 오류로 뒤집으면 안 됩니다.
-              socket.emit("signup_complete", {
-                planCode: preselectedPlanCode,
-                planName: plan.name,
-                monthlyFee: plan.discountFee ?? plan.monthlyFee,
-                paymentMethod,
-              });
-
-              try {
-                // AI 추천으로 시작된 가입만 "전환"으로 집계함
-                if (recommendedByAI) {
-                  await recordConversionEvent(
-                    currentSessionId,
-                    "signup_completed",
-                  );
-                }
-
-                // signup_complete 카드 DB 저장
-                await saveMessage(
-                  currentSessionId,
-                  "ai",
-                  "",
-                  undefined,
-                  "signup_complete",
-                  undefined,
-                  planSnapshot,
-                );
-
-                // 가입 완료 후 signupData 초기화 (재가입 시 정보 재수집을 위해)
-                signupCollectedData = undefined;
-                await updateSignupCollectedData(currentSessionId, {});
-              } catch (postSignupError) {
-                console.error("가입 완료 후 기록 처리 에러:", postSignupError);
-              }
-
-              console.log(
-                `✅ 가입 완료: userId=${userId}, plan=${preselectedPlanCode}`,
-              );
-            } catch (err) {
-              const errMsg = err instanceof Error ? err.message : String(err);
-              console.error("가입 DB 처리 에러:", errMsg, err);
-              socket.emit("error", "가입 처리 중 오류가 발생했습니다.");
-            }
-          }
 
           if (!isStopped()) {
             socket.emit("done");
@@ -1386,6 +1416,8 @@ export function setupChatSocket(io: Server) {
         }
         console.error("AI 채팅 처리 에러:", aiError);
         socket.emit("error", "AI 서버 연결에 실패했습니다.");
+      } finally {
+        processingMessage = false;
       }
     });
 
@@ -1405,10 +1437,10 @@ export function setupChatSocket(io: Server) {
     // 저장함. LLM 호출 없이 텍스트를 그대로 기록만 하므로, AI 응답처럼 스트리밍
     // 하거나 별도 이벤트로 되돌려줄 필요가 없음(프론트가 이미 낙관적으로 렌더링함).
     socket.on("signup_entry", async (payload: SignupEntryPayload) => {
-      const text = payload.text?.trim();
+      const text = typeof payload?.text === "string" ? payload.text.trim() : "";
       if (!text) return;
       try {
-        await sessionReady;
+        if (!(await sessionReady)) return;
         await saveMessage(
           currentSessionId,
           "ai",
@@ -1423,9 +1455,9 @@ export function setupChatSocket(io: Server) {
     });
 
     socket.on("conversion_event", async (payload: ConversionEventPayload) => {
-      if (!isFunnelStage(payload.event)) return;
+      if (!isFunnelStage(payload?.event)) return;
       try {
-        await sessionReady;
+        if (!(await sessionReady)) return;
         await recordConversionEvent(currentSessionId, payload.event);
       } catch (err) {
         console.error("전환 이벤트 처리 에러:", err);
@@ -1434,13 +1466,13 @@ export function setupChatSocket(io: Server) {
 
     socket.on("ui_event", async (payload: UiEventPayload) => {
       if (
-        !isUiEventElement(payload.element) ||
-        !isUiEventAction(payload.action)
+        !isUiEventElement(payload?.element) ||
+        !isUiEventAction(payload?.action)
       ) {
         return;
       }
       try {
-        await sessionReady;
+        if (!(await sessionReady)) return;
         await recordUiEvent(currentSessionId, payload.element, payload.action);
       } catch (err) {
         console.error("UI 이벤트 처리 에러:", err);
@@ -1448,10 +1480,10 @@ export function setupChatSocket(io: Server) {
     });
 
     socket.on("consent", async (payload: ConsentPayload) => {
-      if (typeof payload.consented !== "boolean") return;
+      if (typeof payload?.consented !== "boolean") return;
 
       try {
-        await sessionReady;
+        if (!(await sessionReady)) return;
         await recordChatLogConsent(currentSessionId, payload.consented);
       } catch (err) {
         console.error("채팅 기록 동의 처리 에러:", err);
@@ -1461,7 +1493,7 @@ export function setupChatSocket(io: Server) {
     socket.on("disconnect", async () => {
       console.log("🔌 소켓 연결 종료");
       try {
-        await sessionReady;
+        if (!(await sessionReady)) return;
         await finalizeSessionStatus(currentSessionId);
       } catch (err) {
         console.error("세션 종료 처리 에러:", err);
