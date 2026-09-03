@@ -732,13 +732,6 @@ export function setupChatSocket(io: Server) {
               const selectableSteps = (plan.choiceBenefits ?? []).filter(
                 (b) => b.options.length > 0,
               );
-              const existingSelected = base.selectedBenefits as
-                Record<string, string[]> | undefined;
-              const requiredSteps = selectableSteps.filter((b) => b.required);
-              const allRequiredFilled = requiredSteps.every(
-                (b) =>
-                  (existingSelected?.[b.code]?.length ?? 0) >= b.selectionCount,
-              );
 
               const identitySignupData = {
                 ...base,
@@ -752,27 +745,25 @@ export function setupChatSocket(io: Server) {
                   : {}),
               };
 
-              // 선택할 혜택이 없거나(요금제 자체에 없음), 상세 페이지에서 미리 골라둔
-              // 값으로 필수 항목이 이미 다 채워져 있으면 select_benefits를 건너뜀
-              if (selectableSteps.length === 0 || allRequiredFilled) {
-                shortcut = {
-                  nextStep: "select_payment",
-                  responseMessage:
-                    selectableSteps.length > 0
-                      ? "이미 선택하신 혜택으로 진행할게요. 이제 요금 납부 방법을 선택해 주세요."
-                      : "본인 확인이 완료됐어요. 이제 요금 납부 방법을 선택해 주세요.",
-                  quickReplies: [
-                    "계좌이체",
-                    "신용카드",
-                    "카카오페이",
-                    "네이버페이",
-                    "토스",
-                  ],
-                  signupData: identitySignupData,
-                };
-              }
-              // else: 아직 고를 혜택이 남아있음 — AI가 목록을 안내해야 하므로 아래
-              // getSignupDecision으로 진행함 (shortcut은 null로 남김)
+              // select_benefits 단계(AI에게 남은 필수 혜택을 물어보게 하던 경로)를
+              // 완전히 없애고, 본인확인이 끝나면 항상 바로 결제 방법 선택으로 넘김.
+              // 상세 페이지에서 미리 고른 혜택은 signupData에 그대로 남아있으므로
+              // 가입 완료 시 반영됨
+              shortcut = {
+                nextStep: "select_payment",
+                responseMessage:
+                  selectableSteps.length > 0
+                    ? "이미 선택하신 혜택으로 진행할게요. 이제 요금 납부 방법을 선택해 주세요."
+                    : "본인 확인이 완료됐어요. 이제 요금 납부 방법을 선택해 주세요.",
+                quickReplies: [
+                  "계좌이체",
+                  "신용카드",
+                  "카카오페이",
+                  "네이버페이",
+                  "토스",
+                ],
+                signupData: identitySignupData,
+              };
             }
 
             if (shortcut) {
