@@ -17,9 +17,16 @@ import type { SurveyAnswers } from "../types/chat.js";
 
 /**
  * 회원의 가장 최근 AI 채팅 세션을 조회합니다. (채팅 내역 불러오기용)
+ * 종료된(ended_at이 채워진) 세션은 제외함 — 그렇지 않으면 "채팅 나가기" 직후
+ * 새 세션이 아직 생성되기 전에 새로고침했을 때, 방금 끝낸 옛 대화가 그대로
+ * 복원되는 문제가 있었음(진행 중인 대화가 없으면 null을 반환해 새 웰컴 화면으로 시작함)
  */
 export async function findLatestAIChatSession(userId: string) {
-  return ChatSessionModel.findOne({ user_id: userId, type: "AIChat" }).sort({
+  return ChatSessionModel.findOne({
+    user_id: userId,
+    type: "AIChat",
+    ended_at: null,
+  }).sort({
     updated_at: -1,
   });
 }
@@ -257,6 +264,21 @@ export async function claimGuestSession(userId: string, sessionId: string) {
     { _id: sessionId, type: "AIChat", user_id: null, ended_at: null },
     { $set: { user_id: userId } },
     { new: true },
+  );
+}
+
+/**
+ * 채팅 기록을 관리자가 열람하는 것에 대한 사용자 동의를 기록합니다.
+ * 동의하지 않아도 채팅 자체는 계속 이용할 수 있으며, 이 값은 관리자 채팅 로그
+ * 상세 조회 시에만 영향을 줍니다.
+ */
+export async function recordChatLogConsent(
+  sessionId: string,
+  consented: boolean,
+) {
+  await ChatSessionModel.updateOne(
+    { _id: sessionId },
+    { $set: { chat_log_consent: consented, consent_at: new Date() } },
   );
 }
 

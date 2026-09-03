@@ -8,6 +8,7 @@ import {
   ActivePromptResponse,
   CreatePromptResponse,
   PromptDetailResponse,
+  PromptDraftResponse,
   PromptHistoryItem,
   PromptHistoryResponse,
 } from "../schemas/prompt.schema.js";
@@ -51,9 +52,11 @@ function parseVersionNumber(version: string): number {
 }
 
 async function getNextVersion(): Promise<string> {
-  const prompts = await PromptModel.find().select("version").lean();
+  const prompts = await PromptModel.find({ status: { $ne: "draft" } })
+    .select("version")
+    .lean();
   const maxNumber = prompts.reduce(
-    (max, prompt) => Math.max(max, parseVersionNumber(prompt.version)),
+    (max, prompt) => Math.max(max, parseVersionNumber(prompt.version!)),
     0,
   );
 
@@ -73,23 +76,33 @@ export const createAndDeployPrompt = async (
     { $set: { is_active: false } },
   );
 
-  const prompt = await PromptModel.create({
-    version,
-    content,
-    summary,
-    is_active: true,
-    deployed_at: new Date(),
-    deployed_by: adminId,
-    char_count: content.length,
-  });
+  // 임시저장된 draft가 있으면 그 문서를 그대로 배포 버전으로 승격시키고,
+  // 없으면(=임시저장 없이 바로 배포) 새 문서를 만듦
+  const prompt = await PromptModel.findOneAndUpdate(
+    { status: "draft" },
+    {
+      $set: {
+        version,
+        base_version: null,
+        content,
+        summary,
+        status: "deployed",
+        is_active: true,
+        deployed_at: new Date(),
+        deployed_by: adminId,
+        char_count: content.length,
+      },
+    },
+    { upsert: true, new: true },
+  );
 
   return {
     versionId: prompt._id.toString(),
-    version: prompt.version,
+    version: prompt.version!,
     content: prompt.content,
-    summary: prompt.summary,
+    summary: prompt.summary!,
     isActive: prompt.is_active,
-    deployedAt: prompt.deployed_at,
+    deployedAt: prompt.deployed_at!,
     deployedBy: adminName,
   };
 };
@@ -101,7 +114,7 @@ export const createAndDeployPrompt = async (
 export const getAllPromptVersionsSorted = async (): Promise<
   PromptHistoryItem[]
 > => {
-  const prompts = await PromptModel.find()
+  const prompts = await PromptModel.find({ status: { $ne: "draft" } })
     .sort({ deployed_at: 1 })
     .populate<{ deployed_by: PopulatedDeployer }>("deployed_by", "nickname")
     .lean();
@@ -110,7 +123,7 @@ export const getAllPromptVersionsSorted = async (): Promise<
   const versions = [];
 
   for (const prompt of prompts) {
-    const stats = await getVersionStats(prompt.version);
+    const stats = await getVersionStats(prompt.version!);
     const conversionRateChange =
       prevConversionRate === null
         ? null
@@ -118,9 +131,9 @@ export const getAllPromptVersionsSorted = async (): Promise<
 
     versions.push({
       versionId: prompt._id.toString(),
-      version: prompt.version,
-      summary: prompt.summary,
-      deployedAt: prompt.deployed_at,
+      version: prompt.version!,
+      summary: prompt.summary!,
+      deployedAt: prompt.deployed_at!,
       deployedBy: prompt.deployed_by.nickname,
       conversionRate: stats.conversionRate,
       conversionRateChange,
@@ -158,7 +171,10 @@ export const getPromptDetail = async (
     throw new AppError(404, "해당 버전을 찾을 수 없어요.");
   }
 
-  const prompt = await PromptModel.findById(versionId)
+  const prompt = await PromptModel.findOne({
+    _id: versionId,
+    status: { $ne: "draft" },
+  })
     .populate<{ deployed_by: PopulatedDeployer }>("deployed_by", "nickname")
     .lean();
 
@@ -166,14 +182,14 @@ export const getPromptDetail = async (
     throw new AppError(404, "해당 버전을 찾을 수 없어요.");
   }
 
-  const stats = await getVersionStats(prompt.version);
+  const stats = await getVersionStats(prompt.version!);
 
   return {
     versionId: prompt._id.toString(),
-    version: prompt.version,
+    version: prompt.version!,
     content: prompt.content,
-    summary: prompt.summary,
-    deployedAt: prompt.deployed_at,
+    summary: prompt.summary!,
+    deployedAt: prompt.deployed_at!,
     deployedBy: prompt.deployed_by.nickname,
     conversionRate: stats.conversionRate,
     sessionCount: stats.sessionCount,
@@ -191,7 +207,10 @@ export const activatePromptVersion = async (
     throw new AppError(404, "해당 버전을 찾을 수 없어요.");
   }
 
-  const target = await PromptModel.findById(versionId);
+  const target = await PromptModel.findOne({
+    _id: versionId,
+    status: { $ne: "draft" },
+  });
 
   if (!target) {
     throw new AppError(404, "해당 버전을 찾을 수 없어요.");
@@ -213,9 +232,9 @@ export const activatePromptVersion = async (
 
   return {
     versionId: target._id.toString(),
-    version: target.version,
+    version: target.version!,
     isActive: target.is_active,
-    deployedAt: target.deployed_at,
+    deployedAt: target.deployed_at!,
     deployedBy: adminName,
     message: `${target.version} 버전이 활성화되었습니다.`,
   };
@@ -260,17 +279,82 @@ export const getActivePrompt = async (): Promise<ActivePromptResponse> => {
     throw new AppError(404, "활성 프롬프트가 없어요.");
   }
 
-  const stats = await getVersionStats(prompt.version);
+  const stats = await getVersionStats(prompt.version!);
 
   return {
     versionId: prompt._id.toString(),
-    version: prompt.version,
+    version: prompt.version!,
     content: prompt.content,
     isActive: prompt.is_active,
-    deployedAt: prompt.deployed_at,
+    deployedAt: prompt.deployed_at!,
     deployedBy: prompt.deployed_by.nickname,
     conversionRate: stats.conversionRate,
     sessionCount: stats.sessionCount,
     charCount: prompt.char_count,
+  };
+};
+
+/*
+ * 임시저장된 draft를 조회함. draft가 아직 없으면(=아무도 수정 안 함) 지금 운영 중인
+ * 프롬프트 내용을 기본값으로 돌려줘서, 편집 화면이 항상 뭔가를 보여줄 수 있게 함
+ */
+export const getDraft = async (): Promise<PromptDraftResponse> => {
+  const draft = await PromptModel.findOne({ status: "draft" })
+    .populate<{ updated_by: PopulatedDeployer | null }>(
+      "updated_by",
+      "nickname",
+    )
+    .lean();
+
+  if (draft) {
+    return {
+      content: draft.content,
+      baseVersion: draft.base_version,
+      updatedAt: draft.updated_at,
+      updatedBy: draft.updated_by?.nickname ?? null,
+    };
+  }
+
+  const active = await PromptModel.findOne({ is_active: true }).lean();
+
+  return {
+    content: active?.content ?? DEFAULT_PROMPT_CONTENT,
+    baseVersion: active?.version ?? null,
+    updatedAt: null,
+    updatedBy: null,
+  };
+};
+
+/*
+ * draft는 하나만 유지함 (관리자 화면에 "지금 편집 중인 초안"은 하나뿐이라는 전제).
+ * 이미 draft가 있으면 덮어쓰고, 없으면 새로 만듦
+ */
+export const saveDraft = async (
+  content: string,
+  adminId: string,
+): Promise<PromptDraftResponse> => {
+  const active = await PromptModel.findOne({ is_active: true })
+    .select("version")
+    .lean();
+
+  const draft = await PromptModel.findOneAndUpdate(
+    { status: "draft" },
+    {
+      $set: {
+        content,
+        base_version: active?.version ?? null,
+        status: "draft",
+        char_count: content.length,
+        updated_by: adminId,
+      },
+    },
+    { upsert: true, new: true },
+  ).populate<{ updated_by: PopulatedDeployer }>("updated_by", "nickname");
+
+  return {
+    content: draft.content,
+    baseVersion: draft.base_version,
+    updatedAt: draft.updated_at,
+    updatedBy: draft.updated_by?.nickname ?? null,
   };
 };

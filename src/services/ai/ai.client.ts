@@ -353,6 +353,11 @@ const SIGNUP_LEAK_MARKERS = [
   '"action"',
   "[이미 파악된 정보]",
   "[가입 진행 정보]",
+  // 필드 이름 마커는 JSON이 이미 상당히 진행된 뒤에야 나타나서, 그 앞의 여는 중괄호
+  // "{"까지는 "마커 이전 텍스트"로 취급돼 화면에 그대로 노출되는 문제가 있었음. 이
+  // 답변은 자연어 안내문이라 "{"가 정상적으로 등장할 일이 없으므로, 중괄호 자체를
+  // 가장 이른 누출 신호로 추가함
+  "{",
 ];
 const SIGNUP_LEAK_MAX_MARKER_LEN = Math.max(
   ...SIGNUP_LEAK_MARKERS.map((m) => m.length),
@@ -691,7 +696,12 @@ ${serializePlan(selectedPlan)}
 - winner: 해당 항목에서 더 유리한 쪽("current"|"selected"|"tie"|"none"). "none"은 비교 자체가 불가능한 경우에만.
 - current/selected는 사람이 읽기 좋은 값 그대로.
 - oneLineSummary: 전체를 15자 이내로 요약.
-- summaryReason: 최종 추천 이유를 2~3문장으로 설명. 반말 금지, 존댓말로.`;
+- summaryReason: 최종 추천 이유를 2~3문장으로 설명. 반말 금지, 존댓말로.
+  문장 안에서 판단 근거가 되는 핵심 구절(금액 차이, 혜택명, 요금제명 등)에만
+  **이렇게** 마크다운 굵게 표시를 하세요. 문장 전체를 굵게 하거나 아무 데도
+  굵게 표시하지 않는 것은 금지입니다 — 핵심 구절 2~3곳만 짧게 감싸세요.
+  [JSON 문법 주의] summaryReason 값이 **로 시작하더라도 반드시 여는 큰따옴표(")를
+  먼저 쓰세요. (예: "summaryReason": **비쌈**... (X, JSON 깨짐) → "summaryReason": "**비쌈**... (O))`;
 
   let response;
   try {
@@ -737,8 +747,17 @@ ${serializePlan(selectedPlan)}
   try {
     return JSON.parse(rawText) as PlanComparisonResult;
   } catch {
-    console.error("AI 비교 응답 JSON 파싱 실패:", rawText);
-    throw new Error("AI_RESPONSE_INVALID");
+    // summaryReason이 **로 시작하는데 여는 따옴표를 빼먹는 흔한 실수 한 가지만
+    // 보정해서 한 번 더 시도함 (recommendations.reason과 동일한 보정 로직)
+    try {
+      const repaired = repairUnquotedBoldValue(rawText);
+      const result = JSON.parse(repaired) as PlanComparisonResult;
+      console.warn("AI 비교 응답 JSON 보정 후 파싱 성공 (여는 따옴표 누락)");
+      return result;
+    } catch {
+      console.error("AI 비교 응답 JSON 파싱 실패:", rawText);
+      throw new Error("AI_RESPONSE_INVALID");
+    }
   }
 }
 

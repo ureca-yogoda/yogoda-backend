@@ -60,3 +60,10 @@ export interface ActivatePromptResponse {
   deployedBy: string;
   message: string;
 }
+
+export interface PromptDraftResponse {
+  content: string;
+  baseVersion: string | null;
+  updatedAt: Date | null;
+  updatedBy: string | null;
+}
