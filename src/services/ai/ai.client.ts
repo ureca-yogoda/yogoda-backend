@@ -13,6 +13,141 @@ import type {
   SurveyAnswers,
   SurveyContext,
 } from "../../types/chat.js";
+import type {
+  PersonaAnswers,
+  PersonaAnalysisResult,
+} from "../../types/persona.js";
+
+export type PersonaAnalysisLocale = "ko" | "en";
+
+const PERSONA_ANALYSIS_TYPES = [
+  "data_heavy",
+  "content_balanced",
+  "benefit_focused",
+  "saving_focused",
+  "balanced",
+] as const;
+
+const PERSONA_ANALYSIS_SCHEMA = {
+  type: "object",
+  properties: {
+    type: { type: "string", enum: PERSONA_ANALYSIS_TYPES },
+    title: { type: "string" },
+    description: { type: "string" },
+    summary: { type: "string" },
+    scores: {
+      type: "object",
+      properties: {
+        data: { type: "integer", minimum: 0, maximum: 100 },
+        content: { type: "integer", minimum: 0, maximum: 100 },
+        benefit: { type: "integer", minimum: 0, maximum: 100 },
+        price: { type: "integer", minimum: 0, maximum: 100 },
+      },
+      required: ["data", "content", "benefit", "price"],
+    },
+    direction: { type: "string" },
+    directionDescription: { type: "string" },
+  },
+  required: [
+    "type",
+    "title",
+    "description",
+    "summary",
+    "scores",
+    "direction",
+    "directionDescription",
+  ],
+};
+
+function isPersonaAnalysisResult(
+  value: unknown,
+): value is PersonaAnalysisResult {
+  if (!value || typeof value !== "object") return false;
+  const result = value as Record<string, unknown>;
+  const scores = result.scores as Record<string, unknown> | undefined;
+  const strings = [
+    "title",
+    "description",
+    "summary",
+    "direction",
+    "directionDescription",
+  ];
+
+  return (
+    typeof result.type === "string" &&
+    (PERSONA_ANALYSIS_TYPES as readonly string[]).includes(result.type) &&
+    strings.every(
+      (key) => typeof result[key] === "string" && result[key].length > 0,
+    ) &&
+    !!scores &&
+    ["data", "content", "benefit", "price"].every((key) => {
+      const score = scores[key];
+      return (
+        typeof score === "number" &&
+        Number.isInteger(score) &&
+        score >= 0 &&
+        score <= 100
+      );
+    })
+  );
+}
+
+export async function analyzePersonaWithAI(input: {
+  answers: PersonaAnswers;
+  locale: PersonaAnalysisLocale;
+}): Promise<PersonaAnalysisResult> {
+  const language = input.locale === "en" ? "English" : "Korean";
+  const systemInstruction = `You are a mobile-plan customer persona analyst. Analyze all six survey answers together and return a practical, respectful result in ${language}.
+
+Persona type rules:
+- data_heavy: prioritizes high or unlimited data
+- content_balanced: prioritizes video, OTT, games, or content value
+- benefit_focused: prioritizes memberships, coupons, and partner benefits
+- saving_focused: prioritizes reducing monthly cost
+- balanced: no single priority clearly dominates
+
+Score data, content, benefit, and price importance from 0 to 100. Scores express relative customer priorities, not confidence. Use concise mobile UI copy. Do not claim access to usage history or personal data beyond the supplied answers. Use polite language.`;
+
+  let response;
+  try {
+    response = await axios({
+      method: "post",
+      url: "https://generativelanguage.googleapis.com/v1beta/interactions",
+      headers: { "x-goog-api-key": env.AI_API_KEY },
+      data: {
+        model: env.AI_MODEL,
+        input: JSON.stringify(input.answers),
+        system_instruction: systemInstruction,
+        response_format: {
+          type: "text",
+          mime_type: "application/json",
+          schema: PERSONA_ANALYSIS_SCHEMA,
+        },
+      },
+    });
+  } catch (error) {
+    logAiError("AI 페르소나 분석 요청 실패", error);
+    throw new Error("AI_REQUEST_FAILED");
+  }
+
+  const steps: InteractionStep[] = response.data?.steps ?? [];
+  const rawText = steps.find((step) => step.type === "model_output")
+    ?.content?.[0]?.text;
+  if (typeof rawText !== "string") throw new Error("AI_RESPONSE_INVALID");
+
+  try {
+    const parsed: unknown = JSON.parse(rawText);
+    if (!isPersonaAnalysisResult(parsed)) {
+      throw new Error("AI_RESPONSE_INVALID");
+    }
+    return parsed;
+  } catch (error) {
+    if (error instanceof Error && error.message === "AI_RESPONSE_INVALID") {
+      throw error;
+    }
+    throw new Error("AI_RESPONSE_INVALID");
+  }
+}
 
 /*
  * AxiosError를 console.error에 그대로 넘기면 내부 request/response 객체(소켓, 스트림 등

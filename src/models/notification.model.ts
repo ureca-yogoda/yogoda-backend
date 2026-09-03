@@ -5,7 +5,10 @@ import { Schema, model, Types } from "mongoose";
  * (요금제 추천 알림은 아직 매칭 로직이 없어 추후 추가 예정)
  */
 export type NotificationType =
-  "coupon_expiring" | "attendance_reminder" | "consultation_incomplete";
+  | "coupon_expiring"
+  | "attendance_reminder"
+  | "consultation_incomplete"
+  | "usage_pattern_changed";
 
 export interface INotification {
   _id: Types.ObjectId;
@@ -35,6 +38,7 @@ const notificationSchema = new Schema<INotification>(
         "coupon_expiring",
         "attendance_reminder",
         "consultation_incomplete",
+        "usage_pattern_changed",
       ],
     },
     title: { type: String, required: true },

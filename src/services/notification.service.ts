@@ -64,6 +64,17 @@ async function createNotification(input: {
   }
 }
 
+export function notifyUsagePatternChanged(userId: string, usageMonth: string) {
+  return createNotification({
+    userId,
+    type: "usage_pattern_changed",
+    title: "새 추천이 도착했어요!",
+    body: "사용 패턴 변화가 감지되어 지금 이용 방식에 맞는 요금제를 분석할 수 있어요.",
+    link: "/my/usage",
+    dedupeKey: `usage_pattern_changed:${usageMonth}`,
+  });
+}
+
 /**
  * 만료 D-3인 보유 쿠폰을 스캔해 알림을 생성합니다.
  * 매일 한 번 cron으로 호출되며, 같은 쿠폰에 대해 두 번 이상 알림을 보내지 않도록
@@ -226,6 +237,14 @@ export async function markNotificationAsRead(
 ) {
   await NotificationModel.updateOne(
     { _id: notificationId, user_id: userId, read_at: null },
+    { $set: { read_at: new Date() } },
+  );
+}
+
+/** 로그인한 사용자의 안 읽은 알림을 목록 제한과 관계없이 모두 읽음 처리합니다. */
+export async function markAllNotificationsAsRead(userId: string) {
+  await NotificationModel.updateMany(
+    { user_id: userId, read_at: null },
     { $set: { read_at: new Date() } },
   );
 }
