@@ -27,8 +27,15 @@ import { swaggerSpec } from "./core/config/swagger.js";
 import { connectDB } from "./core/db/mongoose.js";
 import { errorHandler } from "./core/middlewares/errorHandler.js";
 import { startScheduledJobs } from "./core/scheduler.js";
+import {
+  securityHeaders,
+  isAllowedSocketOrigin,
+} from "./core/middlewares/security.js";
+import { apiRateLimit } from "./core/middlewares/rate-limit.js";
 
 const app = express();
+app.disable("x-powered-by");
+app.use(securityHeaders);
 const corsOrigins = env.CORS_ORIGIN.split(",").map((origin) => origin.trim());
 
 app.use(
@@ -38,10 +45,11 @@ app.use(
   }),
 );
 
+app.use("/api", apiRateLimit);
 app.use(express.json());
 app.use(cookieParser());
 
-app.get("/", (req, res) => {
+app.get("/", (_req, res) => {
   res.redirect("/api-docs");
 });
 
@@ -66,6 +74,9 @@ app.use(errorHandler);
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
+  maxHttpBufferSize: 64 * 1024,
+  allowRequest: (req, callback) =>
+    callback(null, isAllowedSocketOrigin(req.headers.origin, corsOrigins)),
   cors: {
     origin: corsOrigins,
     credentials: true,

@@ -1,11 +1,11 @@
 import { Request, Response, NextFunction } from "express";
-import { verifyToken } from "../security/jwt.js";
+import { verifyAccessToken } from "../security/jwt.js";
 import { UserModel } from "../../models/user.model.js";
 import { AppError } from "../../utils/AppError.js";
 
 export const authMiddleware = async (
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction,
 ) => {
   const authHeader = req.headers.authorization;
@@ -15,7 +15,7 @@ export const authMiddleware = async (
   }
 
   const token = authHeader.split(" ")[1];
-  const payload = verifyToken(token);
+  const payload = verifyAccessToken(token);
   const userId = payload.userId;
 
   if (!userId) {

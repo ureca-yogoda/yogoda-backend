@@ -341,8 +341,7 @@ export const changePlan = async (
     throw new AppError(404, "유저를 찾을 수 없어요.");
   }
 
-  // 기존 요금제 쿠폰을 회수한 뒤 변경된 요금제 기준으로 다시 발급함
-  await revokeAvailableCouponsForUser(userId);
+  // Reconcile eligibility without revoking purchased or still-eligible coupons.
   await syncEligibleCouponsForUser(userId);
 
   const newMonthlyFee = plan.discount_fee ?? plan.monthly_fee;
@@ -481,7 +480,6 @@ export const subscribeUserToPlan = async ({
 
   if (!updatedUser) throw new AppError(404, "유저를 찾을 수 없어요.");
 
-  await revokeAvailableCouponsForUser(userId);
   await syncEligibleCouponsForUser(userId);
 
   const newMonthlyFee = plan.discount_fee ?? plan.monthly_fee;

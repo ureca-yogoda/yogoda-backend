@@ -72,7 +72,8 @@ export interface SignupCollectedData {
   birth?: string;
   /** choiceBenefit stepCode → 선택한 optionCode 배열 */
   selectedBenefits?: Record<string, string[]>;
-  paymentMethod?: "계좌이체" | "신용카드";
+  paymentMethod?:
+    "계좌이체" | "신용카드" | "카카오페이" | "네이버페이" | "토스";
   /** signupStep이 "paused"일 때, 재개하면 돌아갈 원래 단계 */
   pausedStep?: SignupStep;
 }

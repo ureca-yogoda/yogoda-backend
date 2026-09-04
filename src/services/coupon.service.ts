@@ -40,6 +40,7 @@ export async function syncEligibleCouponsForUser(userId: string) {
   }
 
   if (!user.current_plan_id) {
+    await revokeAvailableCouponsForUser(userId);
     return;
   }
 
@@ -48,6 +49,7 @@ export async function syncEligibleCouponsForUser(userId: string) {
     .lean();
 
   if (!plan) {
+    await revokeAvailableCouponsForUser(userId);
     return;
   }
 
@@ -81,12 +83,35 @@ export async function syncEligibleCouponsForUser(userId: string) {
     meetsMembershipTier(plan.membership_tier, benefit.minMembershipTier),
   );
 
-  if (eligibleBenefits.length === 0) {
-    return;
-  }
+  // Point-exchange coupons are purchased independently of plan eligibility.
+  await UserCouponModel.updateMany(
+    {
+      user_id: user._id,
+      issuance_key: /^\d{4}-\d{2}$/,
+      status: "available",
+      benefit_id: { $nin: eligibleBenefits.map((benefit) => benefit._id) },
+    },
+    { $set: { status: "revoked" } },
+  );
+
+  if (eligibleBenefits.length === 0) return;
 
   const issuanceKey = getIssuanceKey(now);
   const endOfMonth = getEndOfMonth(now);
+
+  // Restore unused monthly coupons after regaining eligibility, without
+  // issuing a second coupon or reactivating a used/expired one.
+  await UserCouponModel.updateMany(
+    {
+      user_id: user._id,
+      issuance_key: issuanceKey,
+      benefit_id: { $in: eligibleBenefits.map((benefit) => benefit._id) },
+      status: "revoked",
+      used_at: null,
+      expires_at: { $gt: now },
+    },
+    { $set: { status: "available" } },
+  );
 
   await UserCouponModel.bulkWrite(
     eligibleBenefits.map((benefit) => ({
@@ -295,7 +320,7 @@ export async function useMyCoupon(userId: string, couponId: string) {
 
 export async function revokeAvailableCouponsForUser(userId: string) {
   await UserCouponModel.updateMany(
-    { user_id: userId, status: "available" },
+    { user_id: userId, status: "available", issuance_key: /^\d{4}-\d{2}$/ },
     { $set: { status: "revoked" } },
   );
 }

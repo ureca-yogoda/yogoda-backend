@@ -104,6 +104,10 @@ export const loginWithGoogle = async (code: string): Promise<LoginResult> => {
 export const refreshAccessToken = async (
   refreshToken: string,
 ): Promise<string> => {
+  return (await restoreSession(refreshToken)).accessToken;
+};
+
+export const restoreSession = async (refreshToken: string) => {
   let payload;
   try {
     payload = verifyToken(refreshToken);
@@ -121,7 +125,16 @@ export const refreshAccessToken = async (
     throw new AppError(401, "토큰이 만료되었어요. 다시 로그인해 주세요.");
   }
 
-  return createAccessToken({ userId: user._id });
+  return {
+    accessToken: createAccessToken({ userId: user._id }),
+    user: {
+      userId: user._id.toString(),
+      name: user.nickname,
+      role: user.role,
+      provider: user.provider,
+      isNewUser: false,
+    },
+  };
 };
 
 export const logout = async (userId: string): Promise<void> => {

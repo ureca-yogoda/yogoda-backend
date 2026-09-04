@@ -1,6 +1,6 @@
 import { Server, Socket } from "socket.io";
 
-import { verifyToken } from "../../core/security/jwt.js";
+import { verifyAccessToken } from "../../core/security/jwt.js";
 
 // 유저별로 여러 탭/기기에서 접속할 수 있으므로, 유저 단위 room으로 묶어서 한 번에 push함
 function userRoom(userId: string) {
@@ -30,7 +30,7 @@ export function setupNotificationSocket(io: Server) {
     }
 
     try {
-      const payload = verifyToken(token);
+      const payload = verifyAccessToken(token);
       const userId = payload.userId as string | undefined;
 
       if (!userId) {
@@ -39,6 +39,14 @@ export function setupNotificationSocket(io: Server) {
       }
 
       socket.join(userRoom(userId));
+      if (typeof payload.exp === "number") {
+        const expiry = setTimeout(
+          () => socket.disconnect(),
+          Math.max(0, payload.exp * 1000 - Date.now()),
+        );
+        expiry.unref();
+        socket.once("disconnect", () => clearTimeout(expiry));
+      }
     } catch (err) {
       console.error("알림 소켓 토큰 검증 실패:", err);
       socket.disconnect();

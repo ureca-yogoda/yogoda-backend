@@ -3,7 +3,6 @@ import { UserModel } from "../models/user.model.js";
 import { UserSubscriptionModel } from "../models/user-subscription.model.js";
 import { UserUsageSummaryModel } from "../models/user-usage-summary.model.js";
 import { AppError } from "../utils/AppError.js";
-import { env } from "../core/config/env.js";
 import { addMySubscription } from "./subscription.service.js";
 import { notifyUsagePatternChanged } from "./notification.service.js";
 import {
@@ -18,7 +17,7 @@ export interface UsageReport {
   scenario: DemoUsageScenario;
   period: string;
   dataUsed: number;
-  dataLimit: number;
+  dataLimit: number | null;
   callMinutes: number;
   subscriptionCount: number;
   monthlyFee: number;
@@ -215,10 +214,6 @@ export async function applyDemoUsageScenario(
   userId: string,
   scenario: DemoUsageScenario,
 ): Promise<UsageReport> {
-  if (env.NODE_ENV === "production") {
-    throw new AppError(404, "요청한 기능을 찾을 수 없어요.");
-  }
-
   const { user, plan } = await getUserPlan(userId);
   const usage = scenarioUsage[scenario];
   const monthlyFee = plan.discount_fee ?? plan.monthly_fee;
@@ -265,7 +260,8 @@ export async function getMyUsageReport(
     .limit(6)
     .lean();
 
-  if (usage.length === 0 && initializeDemo && env.NODE_ENV !== "production") {
+  // Both local and deployed instances are demonstration environments.
+  if (usage.length === 0 && initializeDemo) {
     return applyDemoUsageScenario(userId, "baseline");
   }
 
@@ -300,10 +296,10 @@ export async function getMyUsageReport(
       appliedScenario ?? (usage.length >= 6 ? "usage-drop" : "baseline"),
     period: latest.usage_month,
     dataUsed: latest.data_usage_gb,
-    dataLimit: plan.data.amount_mb === null ? 80 : plan.data.amount_mb / 1024,
+    dataLimit: plan.data.amount_mb === null ? null : plan.data.amount_mb / 1024,
     callMinutes: latest.call_minutes,
     subscriptionCount: subscriptions.length,
-    monthlyFee: latest.actual_bill_amount,
+    monthlyFee: plan.discount_fee ?? plan.monthly_fee,
     history: usage.map((item) => ({
       month: item.usage_month,
       amount: item.data_usage_gb,
