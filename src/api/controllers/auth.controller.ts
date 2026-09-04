@@ -7,14 +7,15 @@ import {
   loginWithKakao,
   loginWithNaver,
   loginWithGoogle,
-  refreshAccessToken,
+  restoreSession,
   logout,
 } from "../../services/auth.service.js";
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
   secure: env.NODE_ENV === "production",
-  sameSite: "strict" as const,
+  sameSite:
+    env.NODE_ENV === "production" ? ("none" as const) : ("lax" as const),
   path: "/",
   maxAge: Number(env.REFRESH_TOKEN_EXPIRE_DAYS) * 24 * 60 * 60 * 1000,
 };
@@ -122,9 +123,9 @@ export const refreshHandler = async (
       return;
     }
 
-    const accessToken = await refreshAccessToken(refreshToken);
-
-    res.status(200).json({ accessToken });
+    const session = await restoreSession(refreshToken);
+    res.setHeader("Cache-Control", "no-store");
+    res.status(200).json(session);
   } catch (err: unknown) {
     next(err);
   }

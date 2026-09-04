@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { MissionModel } from "../models/mission.model.js";
 import { UserMissionModel } from "../models/user-mission.model.js";
 import { AppError } from "../utils/AppError.js";
@@ -90,7 +91,13 @@ export async function joinMission(userId: string, code: string) {
 
 // 실제 행동 이벤트에서도 호출할 수 있도록 완료 처리를 서비스 함수로 분리함
 export async function completeMissionFromAction(userId: string, code: string) {
-  const mission = await findActiveMission(code);
+  const mission = await MissionModel.findOne({
+    code,
+    is_active: true,
+    status: "active",
+  });
+  // Optional campaigns must not block the user's primary action when absent.
+  if (!mission) return null;
   const existing = await UserMissionModel.findOne({
     user_id: userId,
     mission_id: mission._id,
@@ -111,15 +118,23 @@ export async function completeMissionFromAction(userId: string, code: string) {
 
 export async function claimMissionReward(userId: string, code: string) {
   const mission = await findActiveMission(code);
-  const record = await UserMissionModel.findOneAndUpdate(
-    { user_id: userId, mission_id: mission._id, status: "completed" },
-    { $set: { status: "claimed", claimed_at: new Date() } },
-    { returnDocument: "after" },
-  );
-  if (!record) {
-    throw new AppError(409, "완료한 미션의 보상만 받을 수 있어요.");
-  }
-  const points = mission.reward_points;
-  await addPoints(userId, points, mission.title, `mission:${mission.code}`);
-  return { code, status: record.status, points };
+  return mongoose.connection.transaction(async (session) => {
+    const record = await UserMissionModel.findOneAndUpdate(
+      { user_id: userId, mission_id: mission._id, status: "completed" },
+      { $set: { status: "claimed", claimed_at: new Date() } },
+      { returnDocument: "after", session },
+    );
+    if (!record) {
+      throw new AppError(409, "완료한 미션의 보상만 받을 수 있어요.");
+    }
+    const points = mission.reward_points;
+    await addPoints(
+      userId,
+      points,
+      mission.title,
+      `mission:${mission.code}`,
+      session,
+    );
+    return { code, status: record.status, points };
+  });
 }

@@ -14,7 +14,7 @@ import {
 import type { SurveyAnswers } from "../../types/chat.js";
 
 export async function getActivePromptHandler(
-  req: Request,
+  _req: Request,
   res: Response,
   next: NextFunction,
 ) {
@@ -104,7 +104,7 @@ export async function getPromptDetailHandler(
 }
 
 export async function getDraftHandler(
-  req: Request,
+  _req: Request,
   res: Response,
   next: NextFunction,
 ) {
