@@ -204,6 +204,21 @@ router.post("/google", googleLoginHandler);
  *               properties:
  *                 accessToken:
  *                   type: string
+ *                 user:
+ *                   type: object
+ *                   description: Server-verified session profile
+ *                   required: [userId, name, role, provider, isNewUser]
+ *                   properties:
+ *                     userId:
+ *                       type: string
+ *                     name:
+ *                       type: string
+ *                     role:
+ *                       type: string
+ *                     provider:
+ *                       type: string
+ *                     isNewUser:
+ *                       type: boolean
  *       401:
  *         description: 리프레시 토큰이 없거나 유효하지 않음
  *         content:

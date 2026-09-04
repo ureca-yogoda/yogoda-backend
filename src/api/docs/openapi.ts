@@ -361,40 +361,28 @@
  *       404: { $ref: '#/components/responses/NotFound' }
  * /api/plans/{code}/join:
  *   post:
- *     summary: 요금제 가입
+ *     summary: 폐기된 직접 가입 API (AI 상담 가입 절차 사용)
+ *     deprecated: true
  *     tags: [Plans]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - { in: path, name: code, required: true, schema: { type: string } }
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               selectedOptions: { type: object, additionalProperties: { type: array, items: { type: string } } }
  *     responses:
- *       200: { description: 가입 완료 }
- *       400: { $ref: '#/components/responses/BadRequest' }
- *       409: { $ref: '#/components/responses/Conflict' }
+ *       410:
+ *         description: SIGNUP_FLOW_REQUIRED - 서버가 검증하는 AI 채팅 가입 절차를 완료해야 합니다.
+ *       401: { description: 로그인 필요 }
  * /api/plans/{code}/change:
  *   patch:
- *     summary: 이용 중인 요금제 변경
+ *     summary: 폐기된 직접 가입 API (AI 상담 가입 절차 사용)
+ *     deprecated: true
  *     tags: [Plans]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
  *       - { in: path, name: code, required: true, schema: { type: string } }
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               selectedOptions: { type: object, additionalProperties: { type: array, items: { type: string } } }
  *     responses:
- *       200: { description: 변경 완료 }
- *       400: { $ref: '#/components/responses/BadRequest' }
- *       409: { $ref: '#/components/responses/Conflict' }
+ *       410:
+ *         description: SIGNUP_FLOW_REQUIRED - 서버가 검증하는 AI 채팅 가입 절차를 완료해야 합니다.
+ *       401: { description: 로그인 필요 }
  * /api/plans/{code}:
  *   get:
  *     summary: 요금제 상세 조회

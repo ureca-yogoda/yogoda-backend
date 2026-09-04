@@ -16,6 +16,7 @@ import missionRoutes from "../../src/api/routes/mission.routes.ts";
 import notificationRoutes from "../../src/api/routes/notification.routes.ts";
 import subscriptionRoutes from "../../src/api/routes/subscription.routes.ts";
 import usageRoutes from "../../src/api/routes/usage.routes.ts";
+import planRoutes from "../../src/api/routes/plan.routes.ts";
 import { setupNotificationSocket } from "../../src/api/websocket/notification.websocket.ts";
 import {
   authMiddleware,
@@ -178,6 +179,7 @@ export async function startHarness(port = 0) {
   app.use("/api/notifications", notificationRoutes);
   app.use("/api/subscriptions", subscriptionRoutes);
   app.use("/api/usage", usageRoutes);
+  app.use("/api/plans", planRoutes);
   app.use((error, _req, res, _next) =>
     res.status(error.statusCode ?? 500).json({ message: error.message }),
   );

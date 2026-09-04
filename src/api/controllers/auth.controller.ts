@@ -7,7 +7,7 @@ import {
   loginWithKakao,
   loginWithNaver,
   loginWithGoogle,
-  refreshAccessToken,
+  restoreSession,
   logout,
 } from "../../services/auth.service.js";
 
@@ -123,9 +123,9 @@ export const refreshHandler = async (
       return;
     }
 
-    const accessToken = await refreshAccessToken(refreshToken);
-
-    res.status(200).json({ accessToken });
+    const session = await restoreSession(refreshToken);
+    res.setHeader("Cache-Control", "no-store");
+    res.status(200).json(session);
   } catch (err: unknown) {
     next(err);
   }
